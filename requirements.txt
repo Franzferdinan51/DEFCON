@@ -1,0 +1,10 @@
+# DEFCON Monitor — Requirements
+# Install: pip install -r requirements.txt
+
+# Web dashboard (optional — monitor still works without it)
+flask>=3.0.0
+
+# Production server for web dashboard (optional)
+gunicorn>=21.0.0
+
+# Everything else is stdlib only — no external dependencies required for core.
