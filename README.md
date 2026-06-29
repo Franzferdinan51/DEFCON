@@ -1,8 +1,30 @@
-# DEFCON Level Monitor v3.4
+# 🛡️ DEFCON — OpenClaw / Hermes Agent Threat Intelligence
 
-> **16-domain OSINT threat assessment** — real-time composite threat score + multi-channel alerts.
+> **16-domain OSINT threat intelligence** — designed as an OpenClaw/Hermes agent tool. Runs standalone or as a skill.
 
 **⚠️ OSINT Estimate Only — not an official U.S. government signal.**
+
+**Built for:** OpenClaw/Hermes Agents, cron/scheduled autonomous operation, and standalone CLI. Drop-in threat intelligence for any agentic system.
+
+---
+
+## OpenClaw / Hermes Agent Integration
+
+```bash
+# Add as a skill in Hermes:
+cp -r DEFCON ~/.hermes/skills/intelligence/defcon-monitor/
+# Or register via Hermes CLI:
+hermes skill add --path DEFCON/SKILL.md
+
+# Run via agent:
+python defcon_monitor.py --deep --no-alert
+
+# Schedule autonomous scans:
+python defcon_monitor.py --daemon 1800   # every 30 min
+```
+
+DEFCON runs as a stateless tool — each invocation is independent. Set `DEFCON_TELEGRAM_BOT_TOKEN` for alerts.
+See `SKILL.md` for the full OpenClaw/Hermes agent skill definition.
 
 ---
 
