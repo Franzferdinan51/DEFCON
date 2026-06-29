@@ -122,16 +122,16 @@ DEFCON/
 
 ## Active Intelligence (v3.2 — June 28, 2026)
 
-### 🔥 FLAME Incident — Claude Mythos 5 + Fable 5 Export Controls
+### 🔥 THREAT-2026-0628-002 — US Export Controls on Frontier AI Models (FLAME)
 | | |
 |---|---|
 | **THREAT ID** | `THREAT-2026-0628-002` |
 | **Severity** | HIGH |
 | **Date** | June 12, 2026 |
 | **Actors** | US Commerce Dept (Howard Lutnick), Anthropic, Amazon (Andy Jassy) |
-| **What** | First-ever US export controls on a released AI model. Amazon CEO reported jailbreak exposing offensive cyber capabilities. Global access suspended June 12-13. Partially restored June 25-28 for ~100 vetted US institutions. |
-| **Precedent** | US now treats frontier AI software like controlled munitions |
-| **Impact on Grok/xAI** | None — only Anthropic models targeted |
+| **What** | First-ever US export controls on a released AI model. Amazon CEO reported jailbreak exposing offensive cyber capabilities. Global access suspended June 12-13. Partially restored June 25-28 for ~100 vetted US institutions. Foreign nationals still blocked. |
+| **Precedent** | US now treats frontier AI software like controlled munitions under EAR |
+| **Risk for non-US-model users** | Any user of foreign-hosted AI on federal systems may face restrictions. Check EO 14173 progress. |
 | **Source** | [x.com/stretchcloud](https://x.com/stretchcloud/status/2070738897429205321) |
 
 ### 📊 BIS AI Data Center Debt Crisis — Active
@@ -155,14 +155,16 @@ DEFCON/
 | **What** | Blackstone positioned to dump empty/underutilized data centers back to pension funds in default. Pension funds are end-buyers of last resort. |
 | **Source** | [x.com/rdd147](https://x.com/rdd147/status/2071339539646533902) |
 
-### Your FLAME Risk (US Citizen using Grok/xAI)
-| Scenario | Risk Level | Notes |
+### AI Model Risk — Anyone Using Foreign-Hosted Models
+| Scenario | Risk | Notes |
 |---|---|---|
-| Using Grok as private US citizen | ✅ **LOW** | No current ban on xAI/Grok |
-| Federal contractor work | ⚠️ **MEDIUM** | EO 14173 proposed; Lutnick hostile to foreign AI |
-| Processing government data via Grok | 🔴 **HIGH** | Explicitly prohibited under current policy |
-| Anthropic Claude (Mythos/Fable) recall | ✅ **N/A** | Only affects Claude, not Grok |
-| Future model restrictions | ⚠️ **MEDIUM** | FLAME shows US will restrict AI exports at software level |
+| Using any non-US frontier AI privately | ✅ **LOW** | No current domestic ban on personal use |
+| Federal contractor or government data | 🔴 **HIGH** | Use US-hosted AI for federal work |
+| Processing sensitive data via foreign-hosted API | ⚠️ **MEDIUM** | Creates "national security risk" framing |
+| EO 14173 ("No Adversarial AI Act") passes | 🔴 **HIGH** | Would ban Chinese-origin AI on federal systems |
+| FLAME-type export control on more models | ⚠️ **MEDIUM** | Monitor model-specific policy changes |
+
+The FLAME precedent shows the US will restrict AI at the **software/API level**, not just hardware. If you use any foreign-hosted model (Chinese-origin or otherwise), watch for policy changes that affect your use case.
 ```
 
 ---
