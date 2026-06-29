@@ -1,342 +1,401 @@
 #!/usr/bin/env python3
-"""
-DEFCON Web Dashboard — Flask-based real-time monitoring UI.
-Run:  python defcon_web.py [--host 0.0.0.0] [--port 5000]
-"""
-import sys, os, json
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-sys.path.insert(0, str(BASE_DIR))
+"""DEFCON Monitor v4.0 — Enhanced Web Dashboard with async scanning."""
+import os, sys, time, threading, json, signal, argparse
+from datetime import datetime, timezone
+from flask import Flask, render_template_string, jsonify
 
-from src.state import StateManager
-from src.constants import DEFCON, DOMAIN_WEIGHT
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
 
 try:
-    from flask import Flask, render_template_string, jsonify, redirect
-    HAS_FLASK = True
-except ImportError:
-    HAS_FLASK = False
+    from defcon_monitor import run_scan
+except ImportError as e:
+    print(f"[ERROR] Import failed: {e}")
+    sys.exit(1)
 
-app = Flask(__name__)
-app.template_folder = str(BASE_DIR / "templates")
+# ─── Configuration ──────────────────────────────
+PORT = int(os.environ.get("DEFCON_WEB_PORT", 5051))
+REFRESH_INTERVAL = int(os.environ.get("DEFCON_REFRESH_SEC", 60))
+MAX_HISTORY = 60
 
+# ─── Flask App ──────────────────────────────────
+app = Flask(__name__, static_folder="static")
 
-# ── HTML Template (inline — no separate files needed) ────────────────────────
+# ─── State ──────────────────────────────────────
+class AppState:
+    def __init__(self):
+        self.data = {}
+        self.history = []
+        self.scanning = False
+        self.last_scan_time = None
+        self.scan_duration = 0
+        self.lock = threading.Lock()
+        self._scan_thread = None
+        self._running = False
+    
+    def start_background_scan(self):
+        """Start periodic background scanning."""
+        if self._running:
+            return
+        self._running = True
+        def scan_loop():
+            while self._running:
+                try:
+                    data, duration = run_scan()
+                    with self.lock:
+                        self.data = data
+                        self.last_scan_time = datetime.now(timezone.utc)
+                        self.scan_duration = duration
+                        entry = {
+                            "time": self.last_scan_time.isoformat(),
+                            "overall_score": round(sum(d["score"] for d in data.values()) / len(data), 1) if data else 0,
+                            "domains_scanned": len(data),
+                            "duration_s": round(duration, 1)
+                        }
+                        self.history.append(entry)
+                        if len(self.history) > MAX_HISTORY:
+                            self.history = self.history[-MAX_HISTORY:]
+                except Exception as e:
+                    print(f"[SCAN ERROR] {e}")
+                time.sleep(REFRESH_INTERVAL)
+        t = threading.Thread(target=scan_loop, daemon=True)
+        t.start()
+        self._scan_thread = t
+    
+    def stop(self):
+        """Stop background scanning."""
+        self._running = False
+    
+    def force_scan(self):
+        """Run a scan immediately (blocking)."""
+        with self.lock:
+            self.scanning = True
+        try:
+            data, duration = run_scan()
+            with self.lock:
+                self.data = data
+                self.last_scan_time = datetime.now(timezone.utc)
+                self.scan_duration = duration
+                entry = {
+                    "time": self.last_scan_time.isoformat(),
+                    "overall_score": round(sum(d["score"] for d in data.values()) / len(data), 1) if data else 0,
+                    "domains_scanned": len(data),
+                    "duration_s": round(duration, 1)
+                }
+                self.history.append(entry)
+        finally:
+            with self.lock:
+                self.scanning = False
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+state = AppState()
+
+# ─── HTML Template ──────────────────────────────
+DASHBOARD_HTML = '''<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DEFCON Monitor</title>
-  <style>
-    :root {
-      --bg: #080810;
-      --card: #10101c;
-      --border: #1e1e30;
-      --text: #d0d0e0;
-      --muted: #666680;
-      --green: #44dd88;
-      --yellow: #f0cc44;
-      --orange: #f08030;
-      --red: #ee4444;
-      --dim-red: #aa2222;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Segoe UI', 'SF Pro', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-    }
-    .hero {
-      padding: 32px 24px 24px;
-      border-bottom: 2px solid var(--border);
-      background: linear-gradient(180deg, #0d0d1a 0%, var(--bg) 100%);
-      text-align: center;
-    }
-    .level-display {
-      font-size: 5em;
-      font-weight: 900;
-      line-height: 1;
-      letter-spacing: -4px;
-      text-shadow: 0 0 60px currentColor;
-    }
-    .level-1 { color: var(--red); }
-    .level-2 { color: #f06030; }
-    .level-3 { color: var(--orange); }
-    .level-4 { color: var(--yellow); }
-    .level-5 { color: var(--green); }
-    .label { font-size: 1.4em; font-weight: 600; margin-top: 8px; opacity: 0.8; }
-    .score-bar {
-      width: 100%;
-      max-width: 500px;
-      height: 12px;
-      background: var(--border);
-      border-radius: 6px;
-      margin: 20px auto 0;
-      overflow: hidden;
-    }
-    .score-fill {
-      height: 100%;
-      border-radius: 6px;
-      transition: width 0.6s ease;
-    }
-    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 14px;
-      margin-top: 20px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px 18px;
-    }
-    .card-title {
-      font-size: 0.75em;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-    .card-value { font-size: 1.5em; font-weight: 700; }
-    .card-detail { font-size: 0.8em; color: var(--muted); margin-top: 4px; }
-    .trend { font-size: 1em; margin-top: 12px; }
-    .trend.up { color: var(--red); }
-    .trend.down { color: var(--green); }
-    .trend.flat { color: var(--muted); }
-    .footer {
-      text-align: center;
-      padding: 24px;
-      font-size: 0.75em;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
-    .refresh {
-      display: inline-block;
-      padding: 6px 16px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      cursor: pointer;
-      font-size: 0.85em;
-      text-decoration: none;
-    }
-    .refresh:hover { background: var(--border); }
-    .updated { font-size: 0.8em; color: var(--muted); margin-top: 10px; }
-    .nav { margin-top: 10px; font-size: 0.85em; }
-    .nav a { color: var(--muted); text-decoration: none; margin: 0 8px; }
-    .nav a:hover { color: var(--text); }
-    .defcon-levels {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-top: 12px;
-    }
-    .defcon-pill {
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 0.75em;
-      font-weight: 700;
-    }
-    .pill-1 { background: #2a0a0a; color: #ff6060; border: 1px solid #440000; }
-    .pill-2 { background: #2a1400; color: #f08030; border: 1px solid #442200; }
-    .pill-3 { background: #2a1800; color: #f0a030; border: 1px solid #443300; }
-    .pill-4 { background: #242000; color: #c0b020; border: 1px solid #333300; }
-    .pill-5 { background: #0a2010; color: #40cc70; border: 1px solid #113322; }
-    .active-pill { box-shadow: 0 0 8px currentColor; transform: scale(1.1); }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEFCON Monitor — Threat Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
-  <div class="hero">
-    <div class="level-display level-{{ level }}">DEFCON {{ level }}</div>
-    <div class="label">{{ label }}</div>
-    <div style="margin-top:8px;font-size:0.9em;color:var(--muted);">{{ description }}</div>
-    <div class="score-bar">
-      <div class="score-fill level-{{ level }}" style="width:{{ score_pct }}%; background: currentColor;"></div>
-    </div>
-    <div style="margin-top:6px;font-size:0.85em;color:var(--muted);">
-      Threat Score: {{ score }}/100
-    </div>
-    <div class="trend {{ trend_class }}">{{ trend }}</div>
-    <div class="updated">Last scan: {{ last_check }}</div>
-    <div class="nav">
-      <a href="/">Dashboard</a>
-      <a href="/api/state">API / JSON</a>
-      <a href="/history">History</a>
-    </div>
-  </div>
+<div id="app">
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1>🛡️ DEFCON MONITOR</h1>
+            <span class="subtitle">Multi-Domain Threat Assessment System</span>
+        </div>
+        <div class="header-right">
+            <span id="status-badge" class="badge badge-scanning">⏳ Scanning...</span>
+            <button class="btn btn-sm" onclick="forceRefresh()">⟳ Refresh Now</button>
+        </div>
+    </header>
 
-  <div class="container">
-    <h3 style="margin-bottom:6px;">Domain Status</h3>
-    <div class="grid">
-      {% for domain, info in domains.items() %}
-      <div class="card">
-        <div class="card-title">{{ domain }}</div>
-        <div class="card-value level-{{ info.level }}">Lv {{ info.level }}</div>
-        <div class="card-detail">{{ info.detail }}</div>
-      </div>
-      {% endfor %}
-    </div>
+    <!-- Overall Level -->
+    <section class="overall-section">
+        <div class="overall-card">
+            <div class="level-display" id="overall-level"></div>
+            <div class="score-display" id="overall-score"></div>
+            <div class="threat-name" id="threat-name"></div>
+        </div>
+    </section>
 
-    {% if active_threats %}
-    <h3 style="margin:24px 0 8px;">Active Threats</h3>
-    {% for t in active_threats %}
-    <div class="card" style="border-left:3px solid var(--red);">
-      <div class="card-title">{{ t.category }}</div>
-      <div>{{ t.description }}</div>
-    </div>
-    {% endfor %}
-    {% endif %}
+    <!-- Distribution Bar -->
+    <section class="distribution-section">
+        <h3>Threat Level Distribution</h3>
+        <div class="dist-bar-container">
+            <div class="dist-bar" id="dist-bar"></div>
+        </div>
+        <div class="dist-legend" id="dist-legend"></div>
+    </section>
 
-    <h3 style="margin:24px 0 8px;">DEFCON Level Guide</h3>
-    <div class="defcon-levels">
-      <span class="defcon-pill pill-1 {% if level == 1 %}active-pill{% endif %}">1 — WAR</span>
-      <span class="defcon-pill pill-2 {% if level == 2 %}active-pill{% endif %}">2 — RED</span>
-      <span class="defcon-pill pill-3 {% if level == 3 %}active-pill{% endif %}">3 — ORANGE</span>
-      <span class="defcon-pill pill-4 {% if level == 4 %}active-pill{% endif %}">4 — YELLOW</span>
-      <span class="defcon-pill pill-5 {% if level == 5 %}active-pill{% endif %}">5 — GREEN</span>
-    </div>
-    <p style="font-size:0.8em;color:var(--muted);margin-top:10px;">
-      OSINT estimate only — not an official government signal.
-    </p>
-  </div>
+    <!-- Charts Row -->
+    <section class="charts-row">
+        <div class="chart-card">
+            <h3>📊 Domain Score Radar</h3>
+            <canvas id="radarChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>📈 Trend (Last 20 Scans)</h3>
+            <canvas id="trendChart"></canvas>
+        </div>
+    </section>
 
-  <div class="footer">
-    DEFCON Monitor v3.0 &nbsp;|&nbsp; Data sources: defconlevel.com, api.weather.gov, USGS
-    <br>
-    <a href="/" class="refresh" style="margin-top:8px;">Refresh</a>
-  </div>
-</body>
-</html>"""
+    <!-- Domain Cards -->
+    <section class="domains-section">
+        <h3>Domain Results</h3>
+        <div class="domains-grid" id="domains-grid"></div>
+    </section>
 
+    <!-- Alerts & History -->
+    <section class="bottom-row">
+        <div class="alerts-panel">
+            <h3>🔔 Recent Alerts</h3>
+            <div id="alerts-feed" class="alerts-list"></div>
+        </div>
+        <div class="history-panel">
+            <h3>📋 Scan History (Last 10)</h3>
+            <table id="history-table">
+                <thead><tr><th>Time</th><th>Avg Score</th><th>Domains</th><th>Duration</th></tr></thead>
+                <tbody id="history-body"></tbody>
+            </table>
+        </div>
+    </section>
 
-@app.route("/")
-def dashboard():
-    if not HAS_FLASK:
-        return "Flask is required. Install: pip install flask", 500
+    <!-- Footer -->
+    <footer class="footer">
+        <span id="last-updated">Last updated: Never</span>
+        <span id="scan-info"></span>
+        <button class="btn btn-xs" onclick="exportJSON()">📥 Export JSON</button>
+    </footer>
+</div>
 
-    state = StateManager()._load()
-    level = state.get("current_level", 5)
-    score = state.get("threat_score", 0)
-    scores = state.get("scores", {})
-    history = state.get("history", [])
-    threats = state.get("active_threats", [])
+<script>
+const LEVELS = {1:{color:'#ff0000',name:'DEFCON 1'},2:{color:'#ff6600',name:'DEFCON 2'},3:{color:'#ffcc00',name:'DEFCON 3'},4:{color:'#ffff00',name:'DEFCON 4'},5:{color:'#00ff00',name:'DEFCON 5'}};
+const THREAT_NAMES = {1:'NUCLEAR WARFARE',2:'NEAR IMPENDING NUCLEAR WARFARE',3:'GLOBAL THREAT',4:'INCREASED INTELLIGENCE',5:'NORMAL CYCLE'};
 
-    lvl_enum = DEFCON(level)
+let radarChart, trendChart;
 
-    # Trend
-    delta = 0
-    if len(history) >= 2:
-        delta = history[0].get("score", 0) - history[1].get("score", 0)
-    trend_label = "📈 Escalating" if delta > 0 else "📉 De-escalating" if delta < 0 else "➡️ Stable"
-    trend_class = "up" if delta > 0 else "down" if delta < 0 else "flat"
-
-    # Domain details
-    domain_map = {
-        "defcon": ("DEFCON Level", "clawdwatch / defconlevel.com"),
-        "weather": ("Weather", "NWS api.weather.gov"),
-        "seismic": ("Seismic", "USGS Earthquake API"),
-        "biological": ("Biological", "manual"),
-        "food": ("Food Security", "manual"),
-        "cyber": ("Cyber", "npm audit"),
+function initCharts(){
+    const radarCtx = document.getElementById('radarChart');
+    if(radarCtx) {
+        radarChart = new Chart(radarCtx.getContext('2d'), {
+            type: 'radar',
+            data: { labels: [], datasets: [{label:'Score (0-100)',data:[],backgroundColor:'rgba(255,204,0,0.2)',borderColor:'#ffcc00',pointBackgroundColor:'#ffcc00'}]},
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                scales:{ r:{min:0,max:100,ticks:{stepSize:20},grid:{color:'rgba(255,255,255,0.1)'},angleLines:{color:'rgba(255,255,255,0.1)'}},},
+                plugins:{legend:{display:false}}
+            }
+        });
     }
+    const trendCtx = document.getElementById('trendChart');
+    if(trendCtx) {
+        trendChart = new Chart(trendCtx.getContext('2d'), {
+            type: 'line',
+            data: { labels:[], datasets:[{label:'Avg Score',data:[],borderColor:'#ffcc00',backgroundColor:'rgba(255,204,0,0.1)',fill:true,tension:0.3,pointRadius:3}]},
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                scales:{ y:{min:0,max:100,ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.05)'}}, x:{ticks:{display:false},grid:{display:false}}},
+                plugins:{legend:{display:false}}
+            }
+        });
+    }
+}
 
-    domains = {}
-    for name, (label, src) in domain_map.items():
-        info = scores.get(name, {})
-        lvl_int = info.get("level", 5)
-        detail = info.get("detail", src)
-        if isinstance(detail, list):
-            detail = json.dumps(detail)[:60]
-        domains[name] = {"level": lvl_int, "detail": detail or src}
+function getLevel(score){
+    if(score>=80)return 1; if(score>=60)return 2; if(score>=40)return 3; if(score>=20)return 4; return 5;
+}
+function getLevelColor(score){
+    const l=getLevel(score);
+    return LEVELS[l]?LEVELS[l].color:'#888';
+}
 
-    last_check = state.get("last_check", "never")
-    if "T" in str(last_check):
-        last_check = str(last_check).replace("T", " ")[:19]
+async function fetchData(){
+    try{
+        const resp=await fetch('/api/data');
+        if(!resp.ok)throw new Error('API error');
+        return await resp.json();
+    }catch(e){console.error('Fetch failed:',e);return null;}
+}
 
-    return render_template_string(
-        DASHBOARD_HTML,
-        level=level,
-        label=lvl_enum.label,
-        description=lvl_enum.civilian,
-        value=score,
-        score_pct=min(100, score),
-        trend=trend_label,
-        trend_class=trend_class,
-        last_check=last_check,
-        domains=domains,
-        active_threats=threats[:5],
-    )
+function renderDashboard(data){
+    if(!data)return;
+    const domains=data.domains||{};
+    const history=data.history||[];
+    
+    // Overall level
+    const scores=Object.values(domains).map(d=>d.score);
+    const avgScore=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:0;
+    const overallLevel=getLevel(avgScore);
+    const lvlInfo=LEVELS[overallLevel];
+    
+    document.getElementById('overall-level').innerHTML=`<span style="color:${lvlInfo.color}">${lvlInfo.name}</span>`;
+    document.getElementById('overall-score').textContent=`Score: ${avgScore}/100`;
+    document.getElementById('threat-name').textContent=THREAT_NAMES[overallLevel]||'';
+    
+    // Status badge
+    const isScanning=data.scanning;
+    const badge=document.getElementById('status-badge');
+    if(isScanning){badge.className='badge badge-scanning';badge.textContent='⏳ Scanning...';}
+    else{badge.className='badge badge-ready';badge.textContent=`✅ Updated ${data.last_scan_time?'just now':'Never'}`;}
+    
+    // Distribution bar
+    const dist=[0,0,0,0,0];
+    scores.forEach(s=>{const l=getLevel(s);dist[4-l]++;});
+    const total=scores.length||1;
+    const colors=['#ff0000','#ff6600','#ffcc00','#ffff00','#00ff00'];
+    let barHTML='',legendHTML='';
+    for(let i=0;i<5;i++){
+        const pct=(dist[i]/total*100).toFixed(1);
+        if(pct>0){barHTML+=`<div class="dist-segment" style="width:${pct}%;background:${colors[i]}"></div>`;}
+        legendHTML+=`<span class="legend-item"><span class="dot" style="background:${colors[4-i]}"></span>Lv${i+1}: ${dist[i]}</span>`;
+    }
+    document.getElementById('dist-bar').innerHTML=barHTML||'<div class="dist-segment" style="width:100%;background:#333"></div>';
+    document.getElementById('dist-legend').innerHTML=legendHTML;
+    
+    // Radar chart — update data only, never destroy
+    if(radarChart && Object.keys(domains).length){
+        const labels=Object.keys(domains);
+        const values=labels.map(k=>domains[k].score);
+        radarChart.data.labels=labels;
+        radarChart.data.datasets[0].data=values;
+        radarChart.update('none'); // No animation to prevent "falling" effect
+    }
+    
+    // Trend chart — update data only, never destroy
+    if(trendChart && history.length){
+        const recent=history.slice(-20);
+        trendChart.data.labels=recent.map((_,i)=>`#${i+1}`);
+        trendChart.data.datasets[0].data=recent.map(h=>h.overall_score);
+        trendChart.update('none'); // No animation to prevent "falling" effect
+    }
+    
+    // Domain cards
+    const grid=document.getElementById('domains-grid');
+    grid.innerHTML='';
+    for(const[name,domain] of Object.entries(domains)){
+        const lvl=getLevel(domain.score);
+        const color=LEVELS[lvl].color;
+        const card=document.createElement('div');
+        card.className='domain-card';
+        card.style.borderLeftColor=color;
+        card.innerHTML=`
+            <div class="dc-header">
+                <span class="dc-name">${domain.icon||'📡'} ${name}</span>
+                <span class="dc-level" style="color:${color}">${LEVELS[lvl].name}</span>
+            </div>
+            <div class="dc-body">
+                <div class="dc-score-bar"><div class="dc-score-fill" style="width:${domain.score}%;background:${color}"></div></div>
+                <div class="dc-info">Score: ${domain.score}/100 | Value: ${domain.value}</div>
+            </div>`;
+        grid.appendChild(card);
+    }
+    
+    // Alerts
+    const alertsDiv=document.getElementById('alerts-feed');
+    alertsDiv.innerHTML='';
+    const alerts=[];
+    for(const[name,domain] of Object.entries(domains)){
+        if(domain.score>=40){
+            alerts.push(`<div class="alert-item alert-warn"><strong>${name}</strong> — ${LEVELS[getLevel(domain.score)].name} (${domain.score}/100)</div>`);
+        }
+    }
+    if(!alerts.length) alerts.push('<div class="alert-item">✅ All domains within normal parameters</div>');
+    alertsDiv.innerHTML=alerts.join('');
+    
+    // History table
+    const tbody=document.getElementById('history-body');
+    tbody.innerHTML='';
+    history.slice().reverse().slice(0,10).forEach(h=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${h.time?new Date(h.time).toLocaleTimeString():'-'}</td><td>${h.overall_score}</td><td>${h.domains_scanned}</td><td>${h.duration_s}s</td>`;
+        tbody.appendChild(tr);
+    });
+    
+    // Footer
+    document.getElementById('last-updated').textContent=`Last updated: ${data.last_scan_time?new Date(data.last_scan_time).toLocaleTimeString():'Never'}`;
+    if(data.scan_duration){document.getElementById('scan-info').textContent=`Scan took ${(data.scan_duration*1000).toFixed(0)}ms`;}else{document.getElementById('scan-info').textContent='';}
+}
 
+async function forceRefresh(){
+    try{
+        const resp=await fetch('/api/refresh',{method:'POST'});
+        if(resp.ok){renderDashboard(await resp.json());}
+    }catch(e){console.error(e);}
+}
 
-@app.route("/api/state")
-def api_state():
-    """Return full state as JSON."""
-    state = StateManager()._load()
-    return jsonify({
-        "level": state.get("current_level"),
-        "score": state.get("threat_score"),
-        "scores": state.get("scores"),
-        "last_check": state.get("last_check"),
-        "history": state.get("history", [])[:20],
-        "threats": state.get("active_threats", []),
-    })
+function exportJSON(){
+    fetch('/api/data').then(r=>r.json()).then(d=>{
+        const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);a.download=`defcon_export_${Date.now()}.json`;a.click();
+    });
+}
 
+// Init charts once on page load (persistent instances)
+initCharts();
 
-@app.route("/history")
-def history_page():
-    if not HAS_FLASK:
-        return "Flask required.", 500
-    state = StateManager()._load()
-    history = state.get("history", [])[:50]
-    rows = []
-    for h in history:
-        ts = h.get("ts", "")
-        if "T" in str(ts):
-            ts = str(ts).replace("T", " ")[:19]
-        rows.append(f"<tr><td>{ts}</td><td>DEFCON {h.get('level','?')}</td>"
-                    f"<td>{h.get('score','?')}</td><td>{h.get('delta','?')}</td></tr>")
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>DEFCON History</title>
-<style>
-  body{{font-family:system-ui;background:#080810;color:#d0d0e0;padding:24px;}}
-  table{{width:100%;border-collapse:collapse;}}
-  th,td{{padding:8px 12px;border-bottom:1px solid #1e1e30;text-align:left;}}
-  th{{color:#666680;text-transform:uppercase;font-size:0.75em;letter-spacing:1px;}}
-</style></head>
-<body>
-<h2>DEFCON History</h2>
-<table><thead><tr><th>Timestamp</th><th>Level</th><th>Score</th><th>Delta</th></tr></thead>
-<tbody>{"".join(rows)}</tbody></table>
-<p><a href="/" style="color:#666680;">← Dashboard</a></p>
-</body></html>"""
-    return html
+// Initial data fetch and render
+fetchData().then(renderDashboard);
 
+// Auto-refresh every 60 seconds
+setInterval(()=>{fetchData().then(renderDashboard).catch(e=>console.error('Auto-refresh failed:',e));},60000);
+</script>
+</body>
+</html>'''
 
+# ─── API Routes ──────────────────────────────
+@app.route('/')
+def dashboard():
+    return render_template_string(DASHBOARD_HTML)
+
+@app.route('/api/data')
+def api_data():
+    with state.lock:
+        data = {
+            'domains': state.data,
+            'history': state.history[-20:],
+            'scanning': state.scanning,
+            'last_scan_time': state.last_scan_time.isoformat() if state.last_scan_time else None,
+            'scan_duration': state.scan_duration
+        }
+    return jsonify(data)
+
+@app.route('/api/refresh', methods=['POST'])
+def api_refresh():
+    """Force an immediate scan (blocking)."""
+    threading.Thread(target=state.force_scan, daemon=True).start()
+    # Return current cached data immediately
+    with state.lock:
+        return jsonify({
+            'domains': state.data,
+            'history': state.history[-20:],
+            'scanning': True,
+            'last_scan_time': state.last_scan_time.isoformat() if state.last_scan_time else None,
+            'scan_duration': state.scan_duration
+        })
+
+# ─── Startup ──────────────────────────────
 def main():
-    if not HAS_FLASK:
-        print("ERROR: Flask is required.")
-        print("  pip install flask")
-        print("  python defcon_web.py")
-        return
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=PORT)
+    args = parser.parse_args()
+    
+    print(f"🛡️  DEFCON Monitor v4.0")
+    print(f"   Dashboard: http://localhost:{args.port}")
+    print(f"   Refresh interval: {REFRESH_INTERVAL}s")
+    print(f"   Starting background scan...")
+    
+    # Run initial scan
+    state.force_scan()
+    
+    # Start background scanning
+    state.start_background_scan()
+    
+    app.run(host='0.0.0.0', port=args.port, debug=False)
 
-    host = "0.0.0.0"
-    port = 5000
-    for arg in sys.argv[1:]:
-        if arg.startswith("--host="):
-            host = arg.split("=", 1)[1]
-        elif arg.startswith("--port="):
-            port = int(arg.split("=", 1)[1])
-
-    print(f"DEFCON Dashboard → http://{host}:{port}/")
-    print(f"  API endpoint: http://{host}:{port}/api/state")
-    app.run(host=host, port=port, debug=False, threaded=True)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
