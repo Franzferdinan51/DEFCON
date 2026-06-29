@@ -6,7 +6,7 @@ from typing import Optional
 
 DEFAULT_STATE = {
     "schema_version": "3.3",
-    "version": "3.3.0",
+    "version": "3.4.0",
     "current_level": 5,
     "threat_score": 0,
     "trend": "stable",

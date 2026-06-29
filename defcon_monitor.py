@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DEFCON Monitor v3.3 — 16-domain OSINT composite threat assessment."""
+"""DEFCON Monitor v3.4 — 16-domain OSINT composite threat assessment."""
 import sys, os, json, logging, time, argparse
 from pathlib import Path
 from datetime import datetime, timezone
@@ -313,8 +313,13 @@ if __name__ == "__main__":
 
     # ── Hack response ─────────────────────────────────────────────────────
     if args.hack_check:
-        from scripts.hack_response import phase3_rules
+        from scripts.hack_response import phase3_rules, phase3_wireshark, phase4_attacker_intel
+        print("=== DEFCON HACK RESPONSE PROTOCOL ===\n")
         phase3_rules()
+        print()
+        phase3_wireshark()
+        print()
+        phase4_attacker_intel()
         sys.exit(0)
 
     # ── Export mode ──────────────────────────────────────────────────────

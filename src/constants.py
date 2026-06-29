@@ -1,4 +1,4 @@
-"""DEFCON Monitor v3.3 — Enhanced constants with threat indicators."""
+"""DEFCON Monitor v3.4 — Enhanced constants."""
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
