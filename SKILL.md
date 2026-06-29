@@ -1,12 +1,12 @@
 ---
 name: defcon-monitor
-description: "6-domain OSINT DEFCON threat monitor — geopolitical, weather, seismic, biological, food, cyber. Real-time composite score + Telegram/email alerts."
-version: 3.0.0
+description: "15-domain OSINT DEFCON threat monitor — geopolitical, cyber, seismic, weather, public health, economic, nuclear, biological, food, space weather, volcano, wildfire, infrastructure, maritime, disinfo. Real-time composite score + Telegram/Discord/Slack/PagerDuty alerts."
+version: 3.1.0
 author: DEFCON Monitor Community
 platforms: [windows, linux, macos]
 metadata:
   hermes:
-    tags: [DEFCON, threat-level, OSINT, composite-monitor, defconlevel.com, NWS, USGS, alert]
+    tags: [DEFCON, threat-level, OSINT, 15-domain, composite-monitor, CISA, NWS, USGS, WHO, alert]
     category: intelligence
 ---
 

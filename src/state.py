@@ -5,19 +5,16 @@ from pathlib import Path
 from typing import Optional
 
 DEFAULT_STATE = {
-    "schema_version": "3.0",
+    "schema_version": "3.1",
+    "version": "3.1.0",
     "current_level": 5,
     "threat_score": 0,
+    "trend": "stable",
+    "anomaly_domains": [],
     "last_updated": None,
     "last_check": None,
-    "scores": {
-        "defcon":     {"value": 0,  "raw": None, "max": 32, "detail": "not checked"},
-        "weather":    {"value": 0,  "raw": None, "max": 20, "detail": "clear"},
-        "seismic":    {"value": 0,  "raw": None, "max": 15, "detail": "none"},
-        "biological": {"value": 0,  "raw": None, "max": 15, "detail": "not set"},
-        "food":       {"value": 0,  "raw": None, "max": 10, "detail": "normal"},
-        "cyber":      {"value": 0,  "raw": None, "max":  8, "detail": "not checked"},
-    },
+    "scores": {},
+    "manual_overrides": {},
     "active_threats": [],
     "history": [],
     "confidence": 0.0,

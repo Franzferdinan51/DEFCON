@@ -1,183 +1,166 @@
 #!/usr/bin/env python3
 """
-DEFCON Dashboard — live ASCII terminal display.
-Shows current level, score, 6-domain breakdown, trend, and last scan.
+DEFCON Dashboard v3.1 — 15-domain ASCII terminal display.
 """
-import sys, os
-from pathlib import Path
-BASE_DIR = Path(__file__).parent
-sys.path.insert(0, str(BASE_DIR))
+import sys as _sys
+from pathlib import Path as _Path
+_BASE_DIR = _Path(__file__).parent
+_SYS_PATH = str(_BASE_DIR)
+if _SYS_PATH not in _sys.path:
+    _sys.path.insert(0, _SYS_PATH)
 
-from src.constants import DEFCON, DOMAIN_WEIGHT
+from src.constants import DEFCON, DOMAIN_META
 from src.state import StateManager
-import urllib.request, json
-from datetime import datetime
 
-CLEAN_NAMES = {
-    "defcon": "DEFCON",
-    "weather": "Weather",
-    "seismic": "Seismic",
-    "biological": "Biological",
-    "food": "Food",
-    "cyber": "Cyber",
+EMOJI = {
+    "geopolitical":    "🌍",
+    "cyber":           "💻",
+    "seismic":         "🌋",
+    "weather":         "⛈️",
+    "volcano":         "🌋",
+    "wildfire":        "🔥",
+    "public_health":   "🦠",
+    "economic":        "📊",
+    "space_weather":   "🌌",
+    "maritime":        "✈️",
+    "nuclear":         "☢️",
+    "biological":       "🧬",
+    "food":            "🌾",
+    "infrastructure":   "🏗️",
+    "disinfo":         "📰",
 }
 
-EMOJI = {1: "💀", 2: "🚨", 3: "⚠️", 4: "📢", 5: "✅"}
-TREND = {"▲": "📈", "▼": "📉", "◆": "➡️"}
+TREND_EMOJI = {"escalating": "📈", "de-escalating": "📉", "stable": "➡️"}
 
-
-def color(n: int) -> str:
-    """Return ANSI 256-color code for DEFCON level 1-5."""
-    codes = {1: "\033[38;5;196m", 2: "\033[38;5;202m",
-             3: "\033[38;5;214m", 4: "\033[38;5;226m", 5: "\033[38;5;082m"}
-    return codes.get(n, "\033[0m")
-
+LVL_COLOR = {
+    1: "\033[38;5;196m",
+    2: "\033[38;5;202m",
+    3: "\033[38;5;214m",
+    4: "\033[38;5;226m",
+    5: "\033[38;5;082m",
+}
 RESET = "\033[0m"
-BOLD = "\033[1m"
-DIM = "\033[2m"
+BOLD  = "\033[1m"
+DIM   = "\033[2m"
 
 
-def fetch_clawdwatch_status():
-    try:
-        req = urllib.request.Request(
-            "http://localhost:3444/status",
-            headers={"User-Agent": "curl/8.4.0"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return json.loads(r.read())
-    except Exception:
-        return None
-
-
-def level_bar(value: int, maximum: int, width: int = 20) -> str:
-    filled = int(width * value / max(maximum, 1))
+def bar(value: float, maximum: float, width: int = 14) -> str:
+    filled = int(width * max(0, min(1, value / max(maximum, 1))))
     return "█" * filled + "░" * (width - filled)
-
-
-def threat_color(score: int) -> str:
-    if score >= 80: return color(1)
-    if score >= 60: return color(2)
-    if score >= 40: return color(3)
-    if score >= 20: return color(4)
-    return color(5)
 
 
 def main():
     state = StateManager()
     s = state._load()
 
-    level = s.get("current_level", 5)
-    score = s.get("threat_score", 0)
-    scores = s.get("scores", {})
-    history = s.get("history", [])
-    threats = s.get("active_threats", [])
+    level     = s.get("current_level", 5)
+    score     = s.get("threat_score", 0)
+    trend     = s.get("trend", "stable")
+    anomalies = s.get("anomaly_domains", [])
+    scores    = s.get("scores", {})
+    history   = s.get("history", [])[:5]
+    threats   = s.get("active_threats", [])[:4]
 
-    # Trend
+    # Delta
     delta = 0
     if len(history) >= 2:
-        delta = history[0].get("score", 0) - history[1].get("score", 0)
-    trend_sym = "▲" if delta > 0 else "▼" if delta < 0 else "◆"
-    trend_icon = TREND.get(trend_sym, "➡️")
-    trend_str = f"{trend_icon} {trend_sym}{abs(delta):+d}pt"
+        delta = history[0].get("score", 0) - (history[1].get("score") or 0)
 
-    now = datetime.now().strftime("%a %b %d, %Y  %H:%M:%S")
+    now = _import("datetime").datetime.now().strftime("%a %b %d, %Y  %H:%M:%S")
     scan_ts = s.get("last_check", "never")
     if scan_ts and "T" in str(scan_ts):
-        scan_ts = str(scan_ts).split("T")[1][:8]
-
-    cw = fetch_clawdwatch_status()
-    cw_ver = cw.get("version", "?") if cw else "DOWN"
-    cw_up = "✅" if cw else "❌"
+        scan_ts = str(scan_ts).replace("T", " ")[:19]
 
     lvl = DEFCON(level)
-    sep = "═" * 56
+    c = LVL_COLOR.get(level, "")
+    sep = "═" * 58
 
-    out = []
-    out.append("")
-    out.append(f"{BOLD}{sep}{RESET}")
-    out.append(f"  {BOLD}🛡  DEFCON THREAT MONITOR  —  {now}{RESET}")
-    out.append(f"{BOLD}{sep}{RESET}")
-    out.append("")
-    out.append(f"  {BOLD}Overall Level :{RESET}  {color(level)}{BOLD}DEFCON {level}{RESET}"
-               f"  [{lvl.label}]{RESET}  {trend_str}")
-    out.append(f"  {BOLD}Threat Score  :{RESET}  {threat_color(score)}"
-               f"{BOLD}{score}/100{RESET}  {level_bar(score, 100)}")
-    out.append(f"  {BOLD}Last Scan     :{RESET}  {scan_ts or 'never'}")
+    lines = [
+        "",
+        f"{BOLD}{sep}{RESET}",
+        f"  {BOLD}🛡  DEFCON THREAT MONITOR  —  {now}{RESET}",
+        f"{BOLD}{sep}{RESET}",
+        "",
+        f"  {BOLD}Overall Level  :{RESET}  {c}{BOLD}DEFCON {level}{RESET}  [{lvl.label}]{RESET}",
+        f"  {BOLD}Threat Score   :{RESET}  {c}{score}/100{RESET}  {bar(score, 100, 22)}",
+        f"  {BOLD}Trend           :{RESET}  {TREND_EMOJI.get(trend,'➡️')}  {trend.capitalize()}  {delta:+.0f}pt",
+        f"  {BOLD}Last Scan       :{RESET}  {scan_ts or 'never'}",
+    ]
+    if anomalies:
+        lines.append(f"  {BOLD}⚠️  Anomalies    :{RESET}  {', '.join(anomalies)}")
 
-    # ── Domain breakdown ──────────────────────────────────────────────────
-    out.append(f"\n{BOLD}  Domain Breakdown:{RESET}")
-    out.append(f"  {DIM}{'─'*56}{RESET}")
+    # ── 15-domain grid ────────────────────────────────────────────────────
+    lines += [
+        "",
+        f"{BOLD}  Domain Breakdown (15 domains):{RESET}",
+        f"  {DIM}{'─'*58}{RESET}",
+    ]
 
-    domain_order = ["defcon", "weather", "seismic", "biological", "food", "cyber"]
-    for domain in domain_order:
-        info = scores.get(domain, {})
+    domain_order = [
+        "geopolitical", "cyber", "public_health", "economic",
+        "weather", "seismic", "nuclear", "biological",
+        "food", "infrastructure", "space_weather", "volcano",
+        "wildfire", "maritime", "disinfo",
+    ]
+
+    for did in domain_order:
+        info = scores.get(did, {})
         lvl_int = info.get("level", 5)
-        value = info.get("value", 0)
-        max_w = DOMAIN_WEIGHT.get(domain, 0)
-        detail = info.get("detail", "")
-
-        name = CLEAN_NAMES.get(domain, domain)
-        icon = EMOJI.get(lvl_int, "❓")
-        lvl_color = color(lvl_int)
-        bar = level_bar(value, max_w, 16)
-
-        # Detail line
-        if isinstance(detail, list) and len(detail):
-            if isinstance(detail[0], dict):
-                ev = detail[0].get("event", "") or detail[0].get("place", "")
-            else:
-                ev = str(detail[0])
-            detail_str = f"→ {ev[:36]}"
-        elif isinstance(detail, str):
-            detail_str = f"→ {detail[:36]}" if detail and detail != "not set" else ""
-        else:
-            detail_str = ""
-
-        out.append(
-            f"  {icon}  {name:<12} {lvl_color}Lv{lvl_int}{RESET}  "
-            f"{bar}  {value:>3}/{max_w:>2}  {detail_str}"
+        val     = info.get("value", 0.0)
+        weight  = info.get("weight", DOMAIN_META.get(did, {}).get("weight", 0))
+        detail  = info.get("detail", "")
+        meta    = DOMAIN_META.get(did, {})
+        label   = meta.get("label", did)
+        icon    = EMOJI.get(did, "•")
+        lc      = LVL_COLOR.get(lvl_int, "")
+        b       = bar(val, weight, 12) if weight else "░" * 12
+        det_str = f" → {str(detail)[:30]}" if detail and detail not in ("manual", "not set", "" ) else ""
+        lines.append(
+            f"  {icon}  {label:<17} {lc}Lv{lvl_int}{RESET}  "
+            f"{b}  {val:>5.1f}/{weight:<5.0f}{det_str}"
         )
 
-    # ── Active threats ───────────────────────────────────────────────────
+    # ── Active threats ──────────────────────────────────────────────────
     if threats:
-        out.append(f"\n{BOLD}  Active Threats:{RESET}")
-        out.append(f"  {DIM}{'─'*56}{RESET}")
-        for t in threats[:5]:
+        lines += ["", f"{BOLD}  Active Threats:{RESET}", f"  {DIM}{'─'*58}{RESET}"]
+        for t in threats:
             cat = t.get("category", "?")
-            desc = t.get("description", "?")
+            desc = t.get("description", "?")[:50]
             lvl_t = t.get("level", "?")
-            out.append(f"  ⚠  [{cat.upper()}] DEFCON {lvl_t} — {desc[:44]}")
+            lines.append(f"  ⚠  [{cat.upper()}] DEFCON {lvl_t} — {desc}")
 
-    # ── System status ─────────────────────────────────────────────────────
-    out.append(f"\n{BOLD}  System:{RESET}")
-    out.append(f"  {DIM}{'─'*56}{RESET}")
-    out.append(f"  {'✅' if cw else '❌'}  ClawdWatch  : {cw_up}  v{cw_ver}")
-    out.append(f"  📄  History    : {len(history)} entries")
-    out.append(f"  📁  State File : {state.path}")
-
-    # ── DEFCON level guide ────────────────────────────────────────────────
-    out.append(f"\n{BOLD}  DEFCON Levels:{RESET}")
-    out.append(f"  {DIM}{'─'*56}{RESET}")
+    # ── DEFCON guide ────────────────────────────────────────────────────
+    lines += [
+        "",
+        f"{BOLD}  DEFCON Level Guide:{RESET}",
+        f"  {DIM}{'─'*58}{RESET}",
+    ]
     guide = [
-        (1, "💀 BLACK",  "War imminent / nuclear conflict"),
-        (2, "🚨 RED",   "Armed forces ≤6-hr readiness"),
-        (3, "⚠️  ORANGE", "Enhanced vigilance, 15-min stage"),
-        (4, "📢 YELLOW", "Intelligence watching, increased ops"),
-        (5, "✅ GREEN",  "Normal peacetime posture"),
+        (1, "💀 BLACK / COCKED PISTOL",  "War imminent / nuclear conflict underway"),
+        (2, "🚨 RED / FAST PACE",          "Armed forces ≤6-hour readiness"),
+        (3, "⚠️  ORANGE / ROUND HOUSE",    "Enhanced vigilance; 15-min mobilization"),
+        (4, "📢 YELLOW / DOUBLE TAKE",    "Intelligence watching, increased ops"),
+        (5, "✅ GREEN / FADE OUT",          "Normal peacetime posture"),
     ]
     for lvl_i, name, desc in guide:
-        c = color(lvl_i)
-        marker = "◀──" if lvl_i == level else "    "
-        out.append(f"  {marker}  {c}{name:<12}{RESET}  {desc}")
+        lc = LVL_COLOR.get(lvl_i, "")
+        mrk = "◀──" if lvl_i == level else "    "
+        lines.append(f"  {mrk}  {lc}{name:<22}{RESET}  {desc}")
 
-    out.append(f"\n{BOLD}{sep}{RESET}")
-    out.append("  Run: python defcon_monitor.py       # full scan")
-    out.append("  Run: python defcon_alert.py         # check alerts")
-    out.append("  Run: python defcon_health.py        # diagnostics")
-    out.append(f"{BOLD}{sep}{RESET}")
-    out.append("")
+    lines += [
+        f"{BOLD}{sep}{RESET}",
+        "  Run: python defcon_monitor.py --deep      # full 15-domain scan",
+        "  Run: python defcon_monitor.py --daemon 1800  # daemon (30min)",
+        "  Run: python defcon_monitor.py --export json  # export history",
+        "  Run: python defcon_web.py                  # web dashboard",
+        f"{BOLD}{sep}{RESET}",
+        "",
+    ]
+    print("\n".join(lines))
 
-    print("\n".join(out))
+
+def _import(name):
+    return __import__(name)
 
 
 if __name__ == "__main__":

@@ -1,361 +1,319 @@
 #!/usr/bin/env python3
-"""
-DEFCON Level Monitor — v3.0
-Real-time OSINT threat assessment across 6 domains.
-Reads config from config.py — no personal info embedded.
-"""
-import os, sys, json, logging, re, time, ssl, textwrap
-from datetime import datetime, timezone
+"""DEFCON Monitor v3.1 — 15-domain OSINT composite threat assessment."""
+import sys, os, json, logging, time, argparse
 from pathlib import Path
+from datetime import datetime, timezone
 
-# ── Project paths ─────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
-from src.constants import DEFCON, DOMAIN_WEIGHT, score_to_level
+from src.constants import DEFCON, DomainResult, Priority, AlertEvent, score_to_level
 from src.state import StateManager
-from src.fetcher import fetch, fetch_json
+from src.history import TimelineDB, TrendEngine
+from src.notifiers import dispatch
 
-# ── Logging ────────────────────────────────────────────────────────────────────
-LOG_DIR = Path(os.environ.get("DEFCON_LOG_DIR", str(BASE_DIR / "logs")))
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format="%(asctime)s %(levelname)-8s %(message)s",
     handlers=[
-        logging.FileHandler(LOG_DIR / f"defcon-monitor-{datetime.now().strftime('%Y%m%d')}.log"),
+        logging.FileHandler(BASE_DIR / "logs" / f"defcon-{datetime.now().strftime('%Y%m%d')}.log"),
         logging.StreamHandler(sys.stdout),
     ],
 )
 log = logging.getLogger("defcon.monitor")
 
 
-# ── Domain Scanners ────────────────────────────────────────────────────────────
+# ── Scanner registry ──────────────────────────────────────────────────────────
+DOMAIN_SCANNERS = {
+    "geopolitical":    ("src.sources.defcon",          "scan_geopolitical"),
+    "weather":         ("src.sources.nws",             "scan_weather"),
+    "seismic":          ("src.sources.usgs",            "scan_seismic"),
+    "cyber":            ("src.sources.cyber",           "scan_cyber"),
+    "public_health":   ("src.sources.public_health",   "scan_public_health"),
+    "economic":        ("src.sources.economic",         "scan_economic"),
+    "space_weather":   ("src.sources.space_weather",    "scan_space_weather"),
+    "volcano":          ("src.sources.volcano",          "scan_volcano"),
+    "wildfire":        ("src.sources.wildfire",         "scan_wildfire"),
+    "nuclear":          ("src.sources.nuclear",          "scan_nuclear"),
+    "food":             ("src.sources.food",             "scan_food"),
+    "infrastructure":  ("src.sources.infrastructure",  "scan_infrastructure"),
+    "maritime":        ("src.sources.maritime",         "scan_maritime"),
+    "disinfo":         ("src.sources.disinfo",          "scan_disinfo"),
+    "biological":       ("src.sources.biological",       "scan_biological"),
+}
 
-class DefconScanner:
-    """ClawdWatch + defconlevel.com OSINT aggregation."""
 
-    CLAWDWATCH_URL = os.environ.get("CLAWDWATCH_URL", "http://localhost:3444")
+# ── Run all domain scanners ───────────────────────────────────────────────────
 
-    def scan(self) -> dict:
-        results = {}
-        best_level = 5
+def run_scanners(args):
+    state = StateManager()._load()
+    manual = state.get("manual_overrides", {})
+    results = {}
 
-        # 1. ClawdWatch (if running locally)
-        cw_level = self._scan_clawdwatch()
-        if cw_level is not None:
-            results["clawdwatch"] = {"level": cw_level, "source": "ClawdWatch"}
-            best_level = min(best_level, cw_level)
+    domains_to_run = DOMAIN_SCANNERS.keys()
+    if args.domain:
+        domains_to_run = [args.domain]
 
-        # 2. defconlevel.com (web scrape)
-        dl_level = self._scan_defconlevel_com()
-        if dl_level is not None:
-            results["defconlevel_com"] = {"level": dl_level, "source": "defconlevel.com"}
-            best_level = min(best_level, dl_level)
+    for domain_id in domains_to_run:
+        if domain_id in manual:
+            lvl = manual[domain_id].get("level", 5)
+            score = manual[domain_id].get("score", 0.0)
+            detail = manual[domain_id].get("detail", "manual")
+            results[domain_id] = DomainResult(
+                domain_id=domain_id, level=lvl, score=score,
+                weight=0, detail=detail,
+            )
+            log.info("  %s → MANUAL Lv%d (%s)", domain_id, lvl, detail)
+            continue
 
-        return {"level": best_level, "sources": results}
+        if domain_id not in DOMAIN_SCANNERS:
+            log.warning("  Unknown domain: %s", domain_id)
+            continue
 
-    def _scan_clawdwatch(self):
+        mod_name, fn_name = DOMAIN_SCANNERS[domain_id]
         try:
-            d = fetch_json(f"{self.CLAWDWATCH_URL}/defcon", timeout=8)
-            if d:
-                lvl = d.get("level", 5)
-                log.info("ClawdWatch → DEFCON %s", lvl)
-                return lvl
+            mod = __import__(mod_name, fromlist=[fn_name])
+            fn = getattr(mod, fn_name)
+            kw = {}
+            if domain_id == "weather":
+                kw["zones"] = args.zones
+            if domain_id == "geopolitical":
+                kw["clawdwatch_url"] = args.clawdwatch_url
+            dr = fn(**kw) if kw else fn()
+            results[domain_id] = dr
+            log.info("  %s → Lv%d (%.0fpts) — %s",
+                     domain_id, dr.level, dr.score, dr.detail[:60])
         except Exception as e:
-            log.warning("ClawdWatch unavailable: %s", e)
-        return None
+            log.error("  %s → ERROR: %s", domain_id, e)
+            results[domain_id] = DomainResult(
+                domain_id=domain_id, level=5, score=0.0,
+                weight=0, detail=f"scanner error: {e}",
+            )
 
-    def _scan_defconlevel_com(self):
-        result = fetch("https://www.defconlevel.com/current-level", timeout=12)
-        if not result.success:
-            return None
-        html_lower = result.content.lower()
-        # Look for DEFCON N pattern
-        m = re.search(r"defcon\s+(\d)\b", html_lower)
-        if m:
-            lvl = int(m.group(1))
-            log.info("defconlevel.com → DEFCON %s", lvl)
-            return lvl
-        return None
+    return results
 
 
-class WeatherScanner:
-    """NWS alerts via api.weather.gov."""
+# ── Composite scoring ─────────────────────────────────────────────────────────
 
-    def scan(self) -> dict:
-        zone = os.environ.get("NWS_ZONE", "OHZ061")
-        result = fetch_json(f"https://api.weather.gov/alerts/active?zone={zone}", timeout=10)
-        if result is None:
-            return {"alerts": [], "level": 5}
-
-        features = result.get("features", [])
-        active = [f for f in features
-                  if f.get("properties", {}).get("event", "") not in ("", "None")]
-
-        level = max(1, 5 - len(active))
-        log.info("NWS %s → %s alert(s) → level %s", zone, len(active), level)
-        return {
-            "alerts": [
-                {"event": a.get("properties", {}).get("event", ""),
-                 "headline": a.get("properties", {}).get("headline", ""),
-                 "severity": a.get("properties", {}).get("severity", "")}
-                for a in active[:5]
-            ],
-            "level": level,
-            "zone": zone,
-        }
+def compute_composite(domain_results: dict) -> tuple:
+    total = sum(dr.score for dr in domain_results.values())
+    score = min(100, int(total))
+    level = score_to_level(score)
+    return score, level
 
 
-class SeismicScanner:
-    """USGS earthquake feed — M6+ events in last 30 days."""
+# ── Alert rules ────────────────────────────────────────────────────────────────
 
-    USGS_URL = (
-    "https://earthquake.usgs.gov/fdsnws/event/1/query"
-    "?format=geojson&minmagnitude=6&orderby=magnitude"
-    )
-
-    def scan(self) -> dict:
-        result = fetch_json(self.USGS_URL, timeout=15)
-        if result is None:
-            return {"events": [], "level": 5}
-        features = result.get("features", [])
-        major = [f for f in features if f.get("properties", {}).get("mag", 0) >= 6.5]
-        level = max(1, 5 - len(major))
-        log.info("USGS → %s M6+ events, %s M6.5+ → level %s",
-                 len(features), len(major), level)
-        return {
-            "events": [
-                {"mag": f.get("properties", {}).get("mag"),
-                 "place": f.get("properties", {}).get("place"),
-                 "url": f.get("properties", {}).get("url")}
-                for f in features[:10]
-            ],
-            "level": level,
-            "total_m6_plus": len(features),
-            "major_count": len(major),
-        }
+ALERT_RULES = [
+    ("geopolitical",    lambda r: r.level <= 2,                    Priority.CRITICAL, "Geopolitical DEFCON %d — major conflict"),
+    ("geopolitical",    lambda r: r.level == 3,                    Priority.HIGH,     "Geopolitical DEFCON %d — enhanced vigilance"),
+    ("weather",          lambda r: "Tornado" in r.detail,           Priority.CRITICAL, "Tornado Warning in effect — take cover now"),
+    ("weather",          lambda r: "Heat" in r.detail,              Priority.MEDIUM,   "Heat Advisory in effect"),
+    ("weather",          lambda r: "Winter" in r.detail,            Priority.HIGH,     "Winter Storm Warning in effect"),
+    ("cyber",            lambda r: r.level <= 2,                    Priority.HIGH,     "Cyber CISA KEV count elevated — patch immediately"),
+    ("public_health",   lambda r: r.level <= 2,                    Priority.CRITICAL, "Public Health outbreak keywords detected"),
+    ("nuclear",          lambda r: r.level <= 2,                    Priority.CRITICAL, "Nuclear/radiological incident confirmed"),
+    ("wildfire",        lambda r: r.level <= 2,                    Priority.HIGH,    "Wildfire activity elevated — check evacuation routes"),
+    ("biological",       lambda r: r.level <= 2,                    Priority.CRITICAL, "Biological threat level elevated"),
+    ("seismic",          lambda r: r.level <= 2,                    Priority.HIGH,    "M6+ earthquake activity elevated"),
+]
 
 
-class BiologicalScanner:
-    """Manual biological threat level — read from state (set by set-level)."""
-    # No public API for H5N1 human cases that is reliable without a paid key.
-    # Users set this manually via defcon_set_level.py or the dashboard.
-
-    def scan(self) -> dict:
-        state = StateManager()
-        bio = state._load().get("scores", {}).get("biological", {})
-        level = bio.get("level", 5)
-        detail = bio.get("detail", "not set")
-        log.info("Biological → level %s (%s)", level, detail)
-        return {"level": level, "detail": detail}
-
-
-class FoodScanner:
-    """Manual food/commodity supply threat — read from state."""
-    # Food security threats are episodic and don't have a free real-time API.
-    # Users set this manually or via cron scraping of FAO/WFP feeds.
-
-    def scan(self) -> dict:
-        state = StateManager()
-        food = state._load().get("scores", {}).get("food", {})
-        level = food.get("level", 5)
-        detail = food.get("detail", "not set")
-        log.info("Food/Commodity → level %s (%s)", level, detail)
-        return {"level": level, "detail": detail}
+def generate_alerts(domain_results: dict) -> list[AlertEvent]:
+    alerts = []
+    for domain_id, cond_fn, priority, template in ALERT_RULES:
+        dr = domain_results.get(domain_id)
+        if dr and cond_fn(dr):
+            alerts.append(AlertEvent(
+                priority=priority,
+                domain=domain_id,
+                level=dr.level,
+                headline=template % dr.level,
+                body=dr.detail,
+                source_url=getattr(dr, "source_url", "") or "",
+                indicators=getattr(dr, "indicators", []) or [],
+            ))
+    return alerts
 
 
-class CyberScanner:
-    """npm audit vulnerability scanner — runs in Node.js project dirs."""
+# ── Main scan ─────────────────────────────────────────────────────────────────
 
-    def scan(self) -> dict:
-        import subprocess
-        vulns = 0
-        # Try to find a package.json and run npm audit
-        dirs_to_try = [
-            Path(os.environ.get("NODE_PROJECT_DIR", str(BASE_DIR.parent))),
-            Path(__file__).parent,
-        ]
-        for proj_dir in dirs_to_try:
-            pkg = proj_dir / "package.json"
-            if pkg.exists():
-                try:
-                    r = subprocess.run(
-                        ["npm", "audit", "--json"],
-                        cwd=str(proj_dir),
-                        capture_output=True, timeout=30,
-                    )
-                    try:
-                        d = json.loads(r.stdout)
-                        vulns = d.get("metadata", {}).get(
-                            "vulnerabilities", {}).get("total", 0)
-                        break
-                    except (json.JSONDecodeError, FileNotFoundError):
-                        pass
-                except Exception:
-                    pass
-
-        level = 5 if vulns == 0 else (4 if vulns <= 3 else 3 if vulns <= 7 else 2)
-        log.info("npm audit → %s vulns → level %s", vulns, level)
-        return {"vulns": vulns, "level": level}
-
-
-# ── Composite Engine ───────────────────────────────────────────────────────────
-
-class CompositeEngine:
-    """
-    Converts per-domain levels into a 0-100 composite threat score.
-    Score bands: 0-19→DEFCON5, 20-39→DEFCON4, 40-59→DEFCON3,
-                 60-79→DEFCON2, 80+ →DEFCON1
-    """
-
-    def __init__(self):
-        self.weights = {
-            "defcon":      32,   # Geopolitical/military — primary driver
-            "weather":      20,   # Local NWS alerts
-            "seismic":      15,   # M6+ global earthquakes
-            "biological":  15,   # Manual H5N1 watch
-            "food":        10,   # Manual food security
-            "cyber":        8,   # npm audit
-        }
-
-    def compute(self, domain_levels: dict) -> tuple[int, DEFCON]:
-        """
-        domain_levels: {name: level_int (1-5)}
-        Returns: (score_0_to_100, DEFCON)
-        """
-        total = 0
-        for domain, lvl in domain_levels.items():
-            weight = self.weights.get(domain, 0)
-            # Convert level to threat points: 5→0, 4→weight*0.25, 3→weight*0.5, 2→weight*0.75, 1→weight
-            pts = (5 - lvl) / 4.0 * weight
-            total += pts
-
-        score = min(100, int(total))
-        level = score_to_level(score)
-        return score, level
-
-
-# ── Main Scan ─────────────────────────────────────────────────────────────────
-
-def run_scan() -> dict:
-    """Run all domain scanners and return composite result."""
-    log.info("=== DEFCON Scan START ===")
+def run_scan(args):
     t0 = time.perf_counter()
-    state = StateManager()
+    log.info("=== DEFCON Scan START (v3.1) ===")
 
-    scanners = {
-        "defcon":      DefconScanner(),
-        "weather":     WeatherScanner(),
-        "seismic":     SeismicScanner(),
-        "biological":  BiologicalScanner(),
-        "food":        FoodScanner(),
-        "cyber":       CyberScanner(),
-    }
-
-    domain_levels = {}
-    domain_results = {}
-
-    for name, scanner in scanners.items():
-        try:
-            r = scanner.scan()
-            domain_levels[name] = r.get("level", 5)
-            domain_results[name] = r
-        except Exception as e:
-            log.error("Scanner %s failed: %s", name, e)
-            domain_levels[name] = 5
-            domain_results[name] = {"level": 5, "error": str(e)}
-
-    engine = CompositeEngine()
-    score, level = engine.compute(domain_levels)
-
+    domain_results = run_scanners(args)
+    composite, level = compute_composite(domain_results)
     elapsed_ms = (time.perf_counter() - t0) * 1000
-    log.info(
-        "Composite score=%s/100 → DEFCON %s (%s) in %.0fms",
-        score, level.value, level.label, elapsed_ms,
+
+    # Trend + anomaly
+    db = TimelineDB()
+    te = TrendEngine(db)
+    trend, anomaly_domains = te.compute_trend()
+    db.insert(
+        composite=composite, level=level.value, trend=trend,
+        anomaly=bool(anomaly_domains), confidence=1.0,
+        elapsed_ms=elapsed_ms, domain_results=domain_results,
     )
-    log.info("Domain levels: %s", domain_levels)
 
-    # Persist state
-    scores_struct = {}
-    for name, lvl in domain_levels.items():
-        res = domain_results[name]
-        scores_struct[name] = {
-            "level": lvl,
-            "value": (5 - lvl) * (engine.weights[name] // 4),
-            "raw": lvl,
-            "max": engine.weights[name],
-            "detail": res.get("detail") or res.get("alerts") or res.get("events") or [],
+    # Update persistent state
+    state = StateManager()
+    state.update_scores({
+        k: {
+            "level": v.level, "value": v.score,
+            "weight": v.weight, "detail": v.detail,
+            "raw": v.raw, "source_name": getattr(v, "source_name", ""),
         }
+        for k, v in domain_results.items()
+    })
+    state.update({
+        "current_level": level.value,
+        "threat_score": composite,
+        "trend": trend,
+        "anomaly_domains": anomaly_domains,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "last_check": datetime.now(timezone.utc).isoformat(),
+        "version": "3.1.0",
+    })
 
-    prev, new_lvl, total = state.update_scores(scores_struct)
+    log.info(
+        "Composite=%d/100 → DEFCON %s (%s)  trend=%s  anomalies=%s  [%.0fms]",
+        composite, level.value, level.label, trend, anomaly_domains, elapsed_ms,
+    )
 
-    log.info("=== DEFCON Scan DONE — level %s/%s ===", prev, new_lvl)
+    # Dispatch alerts
+    if not args.no_alert:
+        for alert in generate_alerts(domain_results):
+            results_dispatched = dispatch(alert)
+            if results_dispatched:
+                log.info("Alert dispatched: %s", results_dispatched)
+
     return {
-        "previous_level": prev,
-        "new_level": new_lvl,
-        "threat_score": total,
-        "domain_levels": domain_levels,
-        "elapsed_ms": elapsed_ms,
+        "level": level, "composite": composite,
+        "trend": trend, "anomaly_domains": anomaly_domains,
+        "elapsed_ms": elapsed_ms, "domain_results": domain_results,
     }
+
+
+# ── Print summary ─────────────────────────────────────────────────────────────
+
+def print_summary(result):
+    lvl = result["level"]
+    print(f"\n{'═'*56}")
+    print(f"  🛡  DEFCON {lvl.value}  |  {lvl.label}")
+    print(f"  Score: {result['composite']}/100  |  Trend: {result['trend']}")
+    if result["anomaly_domains"]:
+        print(f"  ⚠️  Anomalies: {', '.join(result['anomaly_domains'])}")
+    print(f"{'═'*56}")
+    for did, dr in result["domain_results"].items():
+        meta = {
+            "geopolitical": "🌍", "cyber": "💻", "seismic": "🌋",
+            "weather": "⛈️", "volcano": "🌋", "wildfire": "🔥",
+            "public_health": "🦠", "economic": "📊", "space_weather": "🌌",
+            "maritime": "✈️", "nuclear": "☢️", "biological": "🧬",
+            "food": "🌾", "infrastructure": "🏗️", "disinfo": "📰",
+        }.get(did, "•")
+        lvl_colors = {1: "\033[38;5;196m", 2: "\033[38;5;202m",
+                      3: "\033[38;5;214m", 4: "\033[38;5;226m", 5: "\033[38;5;082m"}
+        c = lvl_colors.get(dr.level, "")
+        reset = "\033[0m"
+        print(f"  {meta}  {did:<18} {c}Lv{dr.level}{reset} ({dr.score:4.0f}pt)  {dr.detail[:46]}")
+    print(f"{'═'*56}")
+    print(f"  Scan: {result['elapsed_ms']:.0f}ms")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
-def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
-        print(textwrap.dedent("""\
-            DEFCON Level Monitor v3.0
-            Usage: python defcon_monitor.py [options]
+parser = argparse.ArgumentParser(
+    description="DEFCON Monitor v3.1 — 15-domain OSINT threat assessment",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog="""\
+Examples:
+  python defcon_monitor.py                     # Full 15-domain scan
+  python defcon_monitor.py --quick             # Quick 5-core-domain scan
+  python defcon_monitor.py --domain cyber      # Single domain
+  python defcon_monitor.py --zones OHZ061,VAZ053   # Multi-zone weather
+  python defcon_monitor.py --daemon 1800      # Every 30 min (daemon)
+  python defcon_monitor.py --no-alert         # Skip alerts
+  python defcon_monitor.py --export json       # Export history
+  python defcon_monitor.py --history 30        # 30-day history view
+    """,
+)
+parser.add_argument("--deep",   action="store_true", help="Full 15-domain scan (default)")
+parser.add_argument("--quick", action="store_true", help="Quick scan: geopolitical, weather, seismic, cyber, public_health")
+parser.add_argument("--domain", metavar="NAME",    help="Scan single domain only")
+parser.add_argument("--zones", metavar="ZONES",  default="OHZ061",
+                    help="NWS zone(s), comma-separated (default: OHZ061)")
+parser.add_argument("--clawdwatch-url", default="http://localhost:3444",
+                    help="ClawdWatch agent URL (default: http://localhost:3444)")
+parser.add_argument("--no-alert", action="store_true", help="Skip alert dispatch")
+parser.add_argument("--daemon", metavar="SECS", type=int,
+                    help="Run in daemon loop, sleeping SECS seconds between scans")
+parser.add_argument("--export", choices=["json", "csv"],
+                    help="Export timeline history to JSON or CSV")
+parser.add_argument("--history", metavar="DAYS", type=int, default=7,
+                    help="Days of history to show (default: 7)")
+parser.add_argument("--level", metavar="N", type=int,
+                    help="Set DEFCON level manually (1-5) — for manual override")
+parser.add_argument("--bio", metavar="N", type=int,
+                    help="Set biological threat level (0-5) — for manual override")
+parser.add_argument("--food-level", metavar="N", type=int,
+                    help="Set food security level (0-5) — for manual override")
 
-            Options:
-              --scan       Run full composite scan (default)
-              --level N    Set DEFCON level manually (1-5)
-              --bio N      Set biological threat level (0-15)
-              --food N     Set food security level (0-10)
-              --status     Print current status from state file
-              --dashboard  Print ASCII dashboard to stdout
-              --health     Run system health check
-            """))
-        return
-
-    if len(sys.argv) > 1:
-        cmd = sys.argv[1]
-        if cmd == "--status":
-            state = StateManager()
-            s = state._load()
-            print(f"Level: {s.get('current_level', '?')}")
-            print(f"Score: {s.get('threat_score', '?')}/100")
-            print(f"Last:  {s.get('last_check', 'never')}")
-            return
-        if cmd == "--level" and len(sys.argv) >= 3:
-            lvl = int(sys.argv[2])
-            state = StateManager()
-            state.set_level(lvl, reason="manual override")
-            print(f"DEFCON level set to {lvl}")
-            return
-        if cmd == "--bio" and len(sys.argv) >= 3:
-            val = int(sys.argv[2])
-            state = StateManager()
-            state.set_biological(val, detail="manual override")
-            print(f"Biological score set to {val}")
-            return
-        if cmd == "--food" and len(sys.argv) >= 3:
-            val = int(sys.argv[2])
-            state = StateManager()
-            state.set_food(val, detail="manual override")
-            print(f"Food score set to {val}")
-            return
-
-    result = run_scan()
-    print(f"\n{'─'*50}")
-    print(f"  DEFCON {result['new_level']}  |  Score {result['threat_score']}/100")
-    print(f"  {'📈 escalating' if result['threat_score'] > 50 else '📉 de-escalating'}")
-    print(f"  Domains: {result['domain_levels']}")
-    print(f"  Scan: {result['elapsed_ms']:.0f}ms")
-    print(f"{'─'*50}\n")
+args = parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
+    # ── Manual overrides ──────────────────────────────────────────────────
+    if args.level:
+        StateManager().set_level(args.level, f"manual override via CLI")
+        print(f"DEFCON level set to {args.level}")
+        sys.exit(0)
+
+    if args.bio is not None:
+        StateManager().set_biological(args.bio, "manual override via CLI")
+        print(f"Biological level set to {args.bio}")
+        sys.exit(0)
+
+    if args.food_level is not None:
+        StateManager().set_food(args.food_level, "manual override via CLI")
+        print(f"Food level set to {args.food_level}")
+        sys.exit(0)
+
+    # ── Export mode ──────────────────────────────────────────────────────
+    if args.export:
+        db = TimelineDB()
+        export_dir = BASE_DIR / "exports"
+        export_dir.mkdir(exist_ok=True)
+        if args.export == "json":
+            path = export_dir / f"defcon-history-{datetime.now().strftime('%Y%m%d')}.json"
+            db.export_json(path, days=args.history)
+            print(f"JSON export → {path}")
+        elif args.export == "csv":
+            path = export_dir / f"defcon-history-{datetime.now().strftime('%Y%m%d')}.csv"
+            db.export_csv(path, days=args.history)
+            print(f"CSV export → {path}")
+        sys.exit(0)
+
+    # ── Daemon mode ──────────────────────────────────────────────────────
+    if args.daemon:
+        interval = args.daemon
+        # Quick mode filter
+        if args.quick:
+            DOMAIN_SCANNERS_QUICK = {k: DOMAIN_SCANNERS[k] for k in
+                ["geopolitical", "weather", "seismic", "cyber", "public_health"]}
+            import src.constants
+            # monkey-patch for quick mode
+            import src.defcon_monitor as dm
+            dm.DOMAIN_SCANNERS = DOMAIN_SCANNERS_QUICK
+
+        log.info("Daemon mode: scanning every %ds", interval)
+        print(f"DEFCON Monitor daemon — interval {interval}s. Ctrl-C to stop.")
+        while True:
+            result = run_scan(args)
+            print_summary(result)
+            time.sleep(interval)
+
+    # ── Normal single scan ───────────────────────────────────────────────
+    result = run_scan(args)
+    print_summary(result)

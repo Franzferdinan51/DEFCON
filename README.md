@@ -1,22 +1,30 @@
-# DEFCON Level Monitor v3.0
+# DEFCON Level Monitor v3.1
 
-> **OSINT threat assessment monitor** — tracks real-time DEFCON level from multiple sources,
-> computes a composite threat score across 6 domains, and fires alerts via Telegram / email.
+> **15-domain OSINT threat assessment** — real-time composite threat score + multi-channel alerts.
 
 **⚠️ OSINT Estimate Only — not an official U.S. government signal.**
 
 ---
 
-## Features
+## 15 Threat Domains
 
-| Domain | Source | Trigger |
-|---|---|---|
-| Geopolitical DEFCON | ClawdWatch + defconlevel.com | Web scraping / local agent |
-| Weather | NWS api.weather.gov | Active alerts in your zone |
-| Seismic | USGS Earthquake API | M6+ events globally |
-| Biological | Manual | Set via CLI when H5N1/pandemic news warrants |
-| Food Security | Manual | Set via CLI during supply chain crises |
-| Cyber | npm audit | Package vulnerabilities |
+| # | Domain | Source | What It Detects |
+|---|---|---|---|
+| 1 | 🌐 **Geopolitical** | ClawdWatch + defconlevel.com | DEFCON level, conflict zones |
+| 2 | 💻 **Cyber** | CISA KEV Catalog | Known exploited vulnerabilities |
+| 3 | 🌋 **Seismic** | USGS Earthquake API | M4+ earthquakes globally |
+| 4 | ⛈️ **Weather** | NWS api.weather.gov | Tornado, hurricane, flood, heat |
+| 5 | 🌋 **Volcano** | USGS Volcano Hazards | Eruptions, ash advisories |
+| 6 | 🔥 **Wildfire** | InciWeb + NASA FIRMS | Active large wildfires |
+| 7 | 🦠 **Public Health** | WHO DON + ProMED-mail | Disease outbreaks, epidemics |
+| 8 | 📊 **Economic** | CBOE VIX + FRED | Market stress, yield curve |
+| 9 | ☢️ **Nuclear** | IAEA + CTBTO | Radiological incidents |
+| 10 | 🧬 **Biological** | WHO BWC + PubMed | Biorisk, biosafety incidents |
+| 11 | 🌾 **Food** | USDA + RASFF + FAO | Food security threats |
+| 12 | 🏗️ **Infrastructure** | CISA + NTSB | Critical infra failures |
+| 13 | 🌌 **Space Weather** | NOAA SWPC | Geomagnetic storms, solar flares |
+| 14 | ✈️ **Maritime/Aviation** | NOAA + ICAO | Disruptions, SIGMETs |
+| 15 | 📰 **Disinformation** | GDELT Project | Conflict/war news volume |
 
 - **6-domain composite score** (0–100) → DEFCON level 5→1
 - **Terminal dashboard** — color ASCII panel, no dependencies
@@ -30,29 +38,37 @@
 ## Quick Start
 
 ```bash
-# 1. Clone / download the project
-cd DEFCON
+# Install (Flask optional — needed for web dashboard only)
+pip install -r requirements.txt
 
-# 2. Configure (edit config.py or set env vars)
-export NWS_ZONE=OHZ061                  # your NWS zone
-export CLAWDWATCH_URL=http://localhost:3444  # optional
-export DEFCON_TELEGRAM_BOT_TOKEN=...     # optional
-export DEFCON_TELEGRAM_CHAT_ID=...       # optional
-
-# 3. Run a scan
+# Full 15-domain scan
 python defcon_monitor.py
 
-# 4. View dashboard
+# Quick 5-domain scan (faster)
+python defcon_monitor.py --quick
+
+# Single domain
+python defcon_monitor.py --domain cyber
+
+# Multi-zone weather
+python defcon_monitor.py --zones "OHZ061,VAZ053,CAZ048"
+
+# Daemon mode (every 30 minutes)
+python defcon_monitor.py --daemon 1800
+
+# Export history as JSON or CSV
+python defcon_monitor.py --export json --history 30
+
+# View terminal dashboard
 python defcon_dashboard.py
 
-# 5. Health check
+# System diagnostics
 python defcon_health.py
 
-# 6. Check alerts
+# Check alerts (no scan, just dispatch)
 python defcon_alert.py
 
-# 7. Web dashboard (requires Flask)
-pip install flask
+# Web dashboard (requires Flask)
 python defcon_web.py
 # → http://localhost:5000/
 ```
@@ -63,21 +79,43 @@ python defcon_web.py
 
 ```
 DEFCON/
-├── defcon_monitor.py      # Main scanner — run all domain checks
-├── defcon_dashboard.py    # ASCII terminal dashboard
-├── defcon_health.py       # System diagnostics
-├── defcon_alert.py        # Rules-based alert dispatcher
-├── defcon_web.py          # Flask web dashboard (optional)
-├── config.py              # Configuration template — COPY and fill in
-├── requirements.txt       # Python dependencies (Flask only)
+├── defcon_monitor.py          # Main CLI — 15-domain scanner
+├── defcon_dashboard.py         # Color ASCII terminal dashboard
+├── defcon_health.py           # 20-point system diagnostics
+├── defcon_alert.py            # Alert dispatcher (run after scan)
+├── defcon_web.py              # Flask web dashboard (optional)
+├── config.py                  # Configuration — COPY and fill in values
+├── requirements.txt            # Python deps (Flask only)
 ├── src/
-│   ├── __init__.py
-│   ├── constants.py       # DEFCON enums, score bands, labels
-│   ├── state.py           # StateManager — read/write defcon-state.json
-│   └── fetcher.py         # HTTP client with retries, UA rotation, TLS
-├── logs/                  # Auto-created; scan + alert logs land here
+│   ├── constants.py           # DEFCON enums, 15-domain metadata, dataclasses
+│   ├── state.py              # StateManager — read/write defcon-state.json
+│   ├── fetcher.py            # HTTP client — retries, UA rotation, TLS, cache
+│   ├── history.py            # SQLite timeline + TrendEngine + anomaly detection
+│   ├── notifiers.py          # Telegram, Discord, Slack, PagerDuty, SMTP, Webhook
+│   └── sources/              # One scanner per domain
+│       ├── defcon.py          # Geopolitical / DEFCON level
+│       ├── nws.py             # Severe weather
+│       ├── usgs.py            # Seismic / earthquakes
+│       ├── cyber.py           # CISA KEV vulnerabilities
+│       ├── public_health.py  # WHO + ProMED disease outbreaks
+│       ├── economic.py        # VIX, oil, yield curve
+│       ├── nuclear.py         # IAEA + CTBTO
+│       ├── food.py           # USDA + RASFF food security
+│       ├── infrastructure.py  # CISA + NTSB infra
+│       ├── space_weather.py   # NOAA SWPC solar/geomagnetic
+│       ├── volcano.py        # USGS volcano alerts
+│       ├── wildfire.py       # InciWeb + NASA FIRMS
+│       ├── maritime.py       # Maritime + aviation disruptions
+│       ├── disinfo.py        # GDELT conflict signal
+│       └── biological.py     # WHO BWC + PubMed biorisk
+├── templates/
+│   └── dashboard.html        # Web dashboard HTML template
+├── logs/                      # Auto-created; scan + alert logs land here
+├── .env.template             # Env vars template — copy and fill in
+├── .gitignore
+├── LICENSE
 ├── README.md
-└── SKILL.md               # Hermes Agent skill definition
+└── SKILL.md                  # Hermes Agent skill definition
 ```
 
 ---
