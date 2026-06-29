@@ -28,11 +28,11 @@ def scan_infrastructure() -> DomainResult:
         indicators.append({"source": "NTSB", "error": "unreachable"})
 
     return DomainResult(
-        domain_id="infrastructure",
+        domain="infrastructure",
         level=worst_level,
-        score=min(5.0, total_score),
+        value=min(5.0, total_score),
         weight=5.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="CISA + NTSB + PHMSA + FAA",
+        source_url="CISA + NTSB + PHMSA + FAA",
     )

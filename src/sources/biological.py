@@ -21,11 +21,11 @@ def scan_biological() -> DomainResult:
         indicators.append({"source": "PubMed", "status": "reachable"})
 
     return DomainResult(
-        domain_id="biological",
+        domain="biological",
         level=worst_level,
-        score=min(5.0, total_score),
+        value=min(5.0, total_score),
         weight=5.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="WHO BWC + PubMed",
+        source_url="WHO BWC + PubMed",
     )

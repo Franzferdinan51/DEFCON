@@ -13,8 +13,8 @@ def scan_seismic() -> DomainResult:
     d = fetch_json(USGS_URL, timeout=15)
     if d is None:
         return DomainResult(
-            domain_id="seismic", level=5, score=0.0, weight=8.0,
-            detail="USGS feed unavailable", source_name="USGS",
+            domain="seismic", level=5, value=0.0, weight=8.0,
+            detail="USGS feed unavailable", source_url="USGS",
         )
 
     features = d.get("features", [])
@@ -37,12 +37,12 @@ def scan_seismic() -> DomainResult:
         for f in features[:8]
     ]
     return DomainResult(
-        domain_id="seismic",
+        domain="seismic",
         level=level,
-        score=score,
+        value=score,
         weight=8.0,
         detail=f"{len(m6_plus)} M6+, {len(m5_plus)} M5+, {len(features)} total M4+",
-        raw={"m6_plus": len(m6_plus), "total": len(features)},
+        raw_data={"m6_plus": len(m6_plus), "total": len(features)},
         indicators=indicators,
-        source_name="USGS Earthquake API",
+        source_url="USGS Earthquake API",
     )

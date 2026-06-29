@@ -37,17 +37,17 @@ def scan_public_health() -> DomainResult:
 
     if not indicators:
         return DomainResult(
-            domain_id="public_health", level=5, score=0.0, weight=10.0,
-            detail="All feeds unreachable", source_name="WHO + ProMED",
+            domain="public_health", level=5, value=0.0, weight=10.0,
+            detail="All feeds unreachable", source_url="WHO + ProMED",
         )
 
     lvl, score = _level_from_text(all_text)
     return DomainResult(
-        domain_id="public_health",
+        domain="public_health",
         level=lvl,
-        score=score,
+        value=score,
         weight=10.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="WHO DON + ProMED-mail",
+        source_url="WHO DON + ProMED-mail",
     )

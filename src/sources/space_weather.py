@@ -21,11 +21,11 @@ def scan_space_weather() -> DomainResult:
         indicators.append({"source": "NOAA SWPC", "error": "unreachable"})
 
     return DomainResult(
-        domain_id="space_weather",
+        domain="space_weather",
         level=worst_level,
-        score=min(4.0, total_score),
+        value=min(4.0, total_score),
         weight=4.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="NOAA SWPC",
+        source_url="NOAA SWPC",
     )

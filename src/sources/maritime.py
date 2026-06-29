@@ -12,11 +12,11 @@ def scan_maritime() -> DomainResult:
         indicators.append({"source": "NOAA Tides", "status": "reachable"})
 
     return DomainResult(
-        domain_id="maritime",
+        domain="maritime",
         level=worst_level,
-        score=min(3.0, total_score),
+        value=min(3.0, total_score),
         weight=3.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="NOAA + ICAO + Lloyd's List",
+        source_url="NOAA + ICAO + Lloyd's List",
     )

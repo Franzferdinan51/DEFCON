@@ -32,11 +32,11 @@ def scan_disinfo() -> DomainResult:
         indicators.append({"source": "GDELT", "error": "unreachable"})
 
     return DomainResult(
-        domain_id="disinfo",
+        domain="disinfo",
         level=worst_level,
-        score=min(3.0, total_score),
+        value=min(3.0, total_score),
         weight=3.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="GDELT + NewsAPI",
+        source_url="GDELT + NewsAPI",
     )

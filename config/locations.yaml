@@ -1,0 +1,36 @@
+# DEFCON Local Alert Configuration
+# Edit the "personal" section with YOUR location.
+# Anyone cloning this repo: add your own entry or just edit "personal".
+# The system falls back to "default" if personal isn't filled in.
+
+personal:
+  name: "Franz — Huber Heights, OH"
+  lat: 39.8423
+  lon: -84.0088
+  nws_zone: "OHZ005"        # Miami County, OH — get yours at nws.weather.gov/zones
+  nws_office: "ILN"         # Wilmington, OH NWS office
+  county: "Miami"
+  county_fips: "39109"      # Miami County, OH FIPS code
+  state: "OH"
+  river_flood_station: "MRWO1"  # Great Miami River at Petersburg, OH
+  river_flood_threshold_ft: 16.0
+  # Add your own details below
+  name: ""
+  email: ""
+  twitter: ""
+
+# ── Generic fallback — anyone can use this after editing personal above ──
+default:
+  name: "CONUS Generic — Edit config/locations.yaml to set your location"
+  lat: 39.8283
+  lon: -98.5795
+  nws_zone: "KSZ101"        # Phillips County, KS (geographic center of CONUS)
+  nws_office: "TOP"         # Topeka, KS NWS office
+  county: "Phillips"
+  county_fips: "20137"
+  state: "KS"
+  river_flood_station: ""
+  river_flood_threshold_ft: 0.0
+  name: ""
+  email: ""
+  twitter: ""

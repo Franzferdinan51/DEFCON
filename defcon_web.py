@@ -264,7 +264,7 @@ def dashboard():
         level=level,
         label=lvl_enum.label,
         description=lvl_enum.civilian,
-        score=score,
+        value=score,
         score_pct=min(100, score),
         trend=trend_label,
         trend_class=trend_class,

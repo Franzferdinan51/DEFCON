@@ -1,4 +1,4 @@
-# DEFCON Level Monitor v3.2
+# DEFCON Level Monitor v3.3
 
 > **15-domain OSINT threat assessment** — real-time composite threat score + multi-channel alerts.
 

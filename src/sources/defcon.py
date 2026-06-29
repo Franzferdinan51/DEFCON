@@ -33,12 +33,12 @@ def scan_geopolitical(clawdwatch_url="http://localhost:3444", zones=None) -> Dom
 
     score = (5 - best_level) * 3.6
     return DomainResult(
-        domain_id="geopolitical",
+        domain="geopolitical",
         level=best_level,
-        score=score,
+        value=score,
         weight=18.0,
         detail=f"DEFCON {best_level} — {len(sources)} source(s)",
-        raw={"sources": sources},
+        raw_data={"sources": sources},
         indicators=indicators,
-        source_name="ClawdWatch + defconlevel.com",
+        source_url="ClawdWatch + defconlevel.com",
     )

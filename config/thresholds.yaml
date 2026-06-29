@@ -1,0 +1,75 @@
+# DEFCON v3.3 Per-Domain Alert Thresholds
+# Anyone can tune these without editing source code.
+# Levels: 1=CRITICAL, 2=HIGH, 3=ELEVATED, 4=GUARDED, 5=NOMINAL
+
+weather:
+  tornado_warning:       {score: 15, level: 1, description: "Tornado warning within radius"}
+  tornado_watch:         {score: 10, level: 2, description: "Tornado watch within radius"}
+  severe_tstorm_warning: {score: 8,  level: 2, description: "Severe thunderstorm warning (destructive)"}
+  severe_tstorm_watch:   {score: 5,  level: 3, description: "Severe thunderstorm watch"}
+  flash_flood_warning:   {score: 10, level: 2, description: "Flash flood warning within radius"}
+  flood_warning:         {score: 6,  level: 3, description: "River/flood warning"}
+  heat_advisory:         {score: 4,  level: 3, description: "Heat advisory"}
+  heat_warning:           {score: 8,  level: 2, description: "Excessive heat warning"}
+  wind_gust_75mph:       {score: 5,  level: 3, description: "75+ mph wind gust measured"}
+  wind_gust_100mph:      {score: 12, level: 2, description: "100+ mph wind gust measured"}
+  wind_gust_130mph:      {score: 18, level: 1, description: "130+ mph wind gust (rare/extreme event)"}
+  winter_storm_warning:   {score: 8,  level: 2, description: "Winter storm warning"}
+  blizzard_warning:       {score: 15, level: 1, description: "Blizzard warning"}
+
+seismic:
+  m7_plus:        {score: 20, level: 1, description: "M7.0+ within 300mi"}
+  m6_plus:        {score: 15, level: 1, description: "M6.0+ within 100mi"}
+  m5_plus:        {score: 10, level: 2, description: "M5.0+ within 50mi"}
+  m4_plus_local:  {score: 8,  level: 2, description: "M4.0+ within local radius"}
+  m4_plus_distant:{score: 4,  level: 4, description: "M4.0+ but >200mi away"}
+  tsunami_warning: {score: 25, level: 1, description: "Tsunami warning issued"}
+
+cyber:
+  active_ransomware_attack:   {score: 20, level: 1, description: "Active ransomware campaign targeting US"}
+  critical_0day_exploited:    {score: 18, level: 1, description: "Critical 0-day in the wild (CISA KEV)"}
+  major_data_breach:          {score: 12, level: 2, description: "Major breach affecting millions"}
+  ai_export_control_ban:      {score: 10, level: 3, description: "Export control on frontier AI models"}
+  deepseek_ban_expanded:      {score: 6,  level: 3, description: "Chinese AI banned on federal systems"}
+
+economic:
+  vix_extreme:       {score: 20, level: 1, description: "VIX >40 — market panic"}
+  vix_high:          {score: 12, level: 2, description: "VIX >25 — elevated volatility"}
+  yield_curve_inv:   {score: 8,  level: 3, description: "2y-10y spread inverted"}
+  creditspread_wide:  {score: 8,  level: 3, description: "IG credit spread >150bp"}
+  bis_systemic_alert: {score: 15, level: 2, description: "BIS/central bank systemic risk alert"}
+  oil_shock:         {score: 10, level: 2, description: "WTI oil >$110/barrel"}
+  market_crash:      {score: 20, level: 1, description: "S&P 500 down >10% in 30 days"}
+
+geopolitical:
+  us_war:          {score: 25, level: 1, description: "US military conflict"}
+  nato_war:        {score: 20, level: 1, description: "NATO Article 5 invoked"}
+  china_taiwan:     {score: 18, level: 1, description: "China/Taiwan kinetic"}
+  middle_east_war: {score: 15, level: 2, description: "Active major Middle East war"}
+  us_iran:          {score: 12, level: 2, description: "US-Iran hostilities"}
+  nk_crisis:       {score: 10, level: 2, description: "North Korea crisis"}
+  terrorism_us:     {score: 15, level: 2, description: "Terrorism on US soil"}
+  civil_unrest:     {score: 6,  level: 3, description: "Major civil unrest domestically"}
+
+disinfo:
+  coordinated_inauthentic:   {score: 8, level: 3, description: "Coordinated inauthentic behavior detected"}
+  deepfake_official:        {score: 12, level: 2, description: "Deepfake of official source"}
+  election_misinfo_rapid:   {score: 10, level: 2, description: "Election-related misinfo spreading fast"}
+  ai_generated_disinfo:     {score: 6,  level: 3, description: "AI-generated disinfo campaign detected"}
+
+public_health:
+  pandemic_declared:       {score: 25, level: 1, description: "WHO PHEIC declared"}
+  outbreak_pandemic:       {score: 20, level: 1, description: "Novel pathogen with pandemic potential"}
+  biosafety_accident:     {score: 18, level: 1, description: "BSL-4 biosafety incident"}
+  mass_casualty_terror:   {score: 15, level: 2, description: "Terrorist mass casualty event"}
+  drug_contamination:     {score: 8,  level: 3, description: "Widespread drug/ food contamination"}
+
+local:
+  eab_alert:       {score: 10, level: 2, description: "Emergency Action Broadcast (EAS)"}
+  wea_president:   {score: 20, level: 1, description: "Wireless Emergency Alert — President"}
+  wea_imminent:    {score: 15, level: 2, description: "WEA — imminent threat to life"}
+  air_quality_hazardous: {score: 12, level: 2, description: "AQI >300 — hazardous"}
+  air_quality_unhealthy: {score: 6,  level: 3, description: "AQI >150 — unhealthy for sensitive"}
+  afb_emergency:   {score: 10, level: 2, description: "Wright-Patterson AFB emergency broadcast"}
+  river_flood:     {score: 10, level: 2, description: "Great Miami River flooding"}
+  radiation_release:{score: 25, level: 1, description: "Radiological release — immediate shelter"}

@@ -23,11 +23,11 @@ def scan_food() -> DomainResult:
         indicators.append({"source": "FAO GIEWS", "status": "reachable"})
 
     return DomainResult(
-        domain_id="food",
+        domain="food",
         level=worst_level,
-        score=min(4.0, total_score),
+        value=min(4.0, total_score),
         weight=4.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="USDA + RASFF + FAO GIEWS",
+        source_url="USDA + RASFF + FAO GIEWS",
     )

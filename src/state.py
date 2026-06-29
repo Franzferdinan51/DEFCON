@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Optional
 
 DEFAULT_STATE = {
-    "schema_version": "3.2",
-    "version": "3.2.0",
+    "schema_version": "3.3",
+    "version": "3.3.0",
     "current_level": 5,
     "threat_score": 0,
     "trend": "stable",

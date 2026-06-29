@@ -41,9 +41,9 @@ def scan_weather(zones=None) -> DomainResult:
 
     if not all_alerts:
         return DomainResult(
-            domain_id="weather", level=5, score=0.0, weight=8.0,
+            domain="weather", level=5, value=0.0, weight=8.0,
             detail="No active alerts",
-            source_name="NWS api.weather.gov",
+            source_url="NWS api.weather.gov",
         )
 
     worst_level, total_score, indicators = 5, 0.0, []
@@ -65,12 +65,12 @@ def scan_weather(zones=None) -> DomainResult:
 
     score = min(8.0, total_score)
     return DomainResult(
-        domain_id="weather",
+        domain="weather",
         level=worst_level,
-        score=score,
+        value=score,
         weight=8.0,
         detail=f"{len(all_alerts)} alert(s) across {len(zones)} zone(s)",
-        raw={"alerts": all_alerts[:10]},
+        raw_data={"alerts": all_alerts[:10]},
         indicators=indicators,
-        source_name="NWS api.weather.gov",
+        source_url="NWS api.weather.gov",
     )

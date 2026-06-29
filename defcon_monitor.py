@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DEFCON Monitor v3.1 — 15-domain OSINT composite threat assessment."""
+"""DEFCON Monitor v3.3 — 16-domain OSINT composite threat assessment."""
 import sys, os, json, logging, time, argparse
 from pathlib import Path
 from datetime import datetime, timezone
@@ -40,6 +40,7 @@ DOMAIN_SCANNERS = {
     "maritime":        ("src.sources.maritime",         "scan_maritime"),
     "disinfo":         ("src.sources.disinfo",          "scan_disinfo"),
     "biological":       ("src.sources.biological",       "scan_biological"),
+    "local":           ("src.sources.local_alerts",      "domain_result_local"),
 }
 
 
@@ -60,7 +61,7 @@ def run_scanners(args):
             score = manual[domain_id].get("score", 0.0)
             detail = manual[domain_id].get("detail", "manual")
             results[domain_id] = DomainResult(
-                domain_id=domain_id, level=lvl, score=score,
+                domain=domain_id, level=lvl, value=score,
                 weight=0, detail=detail,
             )
             log.info("  %s → MANUAL Lv%d (%s)", domain_id, lvl, detail)
@@ -82,11 +83,11 @@ def run_scanners(args):
             dr = fn(**kw) if kw else fn()
             results[domain_id] = dr
             log.info("  %s → Lv%d (%.0fpts) — %s",
-                     domain_id, dr.level, dr.score, dr.detail[:60])
+                     domain_id, dr.level, dr.value, dr.detail[:60])
         except Exception as e:
             log.error("  %s → ERROR: %s", domain_id, e)
             results[domain_id] = DomainResult(
-                domain_id=domain_id, level=5, score=0.0,
+                domain=domain_id, level=5, value=0.0,
                 weight=0, detail=f"scanner error: {e}",
             )
 
@@ -96,7 +97,7 @@ def run_scanners(args):
 # ── Composite scoring ─────────────────────────────────────────────────────────
 
 def compute_composite(domain_results: dict) -> tuple:
-    total = sum(dr.score for dr in domain_results.values())
+    total = sum(dr.value for dr in domain_results.values())
     score = min(100, int(total))
     level = score_to_level(score)
     return score, level
@@ -151,7 +152,7 @@ def run_scan(args):
     te = TrendEngine(db)
     trend, anomaly_domains = te.compute_trend()
     db.insert(
-        composite=composite, level=level.value, trend=trend,
+        composite=composite, level=level, trend=trend,
         anomaly=bool(anomaly_domains), confidence=1.0,
         elapsed_ms=elapsed_ms, domain_results=domain_results,
     )
@@ -160,9 +161,9 @@ def run_scan(args):
     state = StateManager()
     state.update_scores({
         k: {
-            "level": v.level, "value": v.score,
+            "level": v.level, "value": v.value,
             "weight": v.weight, "detail": v.detail,
-            "raw": v.raw, "source_name": getattr(v, "source_name", ""),
+            "raw": v.raw_data,
         }
         for k, v in domain_results.items()
     })
@@ -173,12 +174,12 @@ def run_scan(args):
         "anomaly_domains": anomaly_domains,
         "last_updated": datetime.now(timezone.utc).isoformat(),
         "last_check": datetime.now(timezone.utc).isoformat(),
-        "version": "3.1.0",
+        "version": "3.3.0",
     })
 
     log.info(
         "Composite=%d/100 → DEFCON %s (%s)  trend=%s  anomalies=%s  [%.0fms]",
-        composite, level.value, level.label, trend, anomaly_domains, elapsed_ms,
+        composite, level, level, trend, anomaly_domains, elapsed_ms,
     )
 
     # Dispatch alerts
@@ -259,6 +260,10 @@ parser.add_argument("--bio", metavar="N", type=int,
                     help="Set biological threat level (0-5) — for manual override")
 parser.add_argument("--food-level", metavar="N", type=int,
                     help="Set food security level (0-5) — for manual override")
+parser.add_argument("--rules", action="store_true",
+                    help="Print DEFCON rules and domain escalation criteria, then exit")
+parser.add_argument("--hack-check", action="store_true",
+                    help="Run local hack-response protocol and print the IR checklist, then exit")
 
 args = parser.parse_args()
 
@@ -278,6 +283,38 @@ if __name__ == "__main__":
     if args.food_level is not None:
         StateManager().set_food(args.food_level, "manual override via CLI")
         print(f"Food level set to {args.food_level}")
+        sys.exit(0)
+
+    # ── Rules display ──────────────────────────────────────────────────────
+    if args.rules:
+        from rules import DEFCON_LEVELS, DOMAIN_RULES, ESCALATION_PROTOCOL
+        print("=" * 60)
+        print("  DEFCON LEVEL REFERENCE GUIDE v3.3")
+        print("=" * 60)
+        for lvl, info in DEFCON_LEVELS.items():
+            print(f"\nDEFCON {lvl} — {info['label']}")
+            print(f"  Civilian:    {info['civilian']}")
+            print(f"  Response:    {info['response_time']}")
+            print(f"  Description: {info['description']}")
+        print("\n" + "=" * 60)
+        print("  DOMAIN-SPECIFIC RULES (what triggers each level)")
+        print("=" * 60)
+        for domain, rules in DOMAIN_RULES.items():
+            print(f"\n[{domain.upper()}]")
+            for lvl in range(1, 6):
+                crit = rules.get(lvl, [])
+                print(f"  DEFCON {lvl}: {' | '.join(crit) if crit else 'Nominal'}")
+        print("\n" + "=" * 60)
+        print("  ESCALATION PROTOCOL")
+        print("=" * 60)
+        for lvl, action in ESCALATION_PROTOCOL:
+            print(f"  DEFCON {lvl}: {action}")
+        sys.exit(0)
+
+    # ── Hack response ─────────────────────────────────────────────────────
+    if args.hack_check:
+        from scripts.hack_response import phase3_rules
+        phase3_rules()
         sys.exit(0)
 
     # ── Export mode ──────────────────────────────────────────────────────

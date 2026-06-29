@@ -48,7 +48,7 @@ def main():
         schema = s.get("schema_version", "?")
         lvl = s.get("current_level", "?")
         score = s.get("threat_score", "?")
-        ok("State file", f"readable — schema {schema}, level={lvl}, score={score}")
+        ok("State file", f"readable — schema {schema}, level={lvl}, value={score}")
     except Exception as e:
         fail("State file", str(e))
         print("  Cannot continue — state file is required.")
@@ -61,10 +61,10 @@ def main():
         score = s.get("threat_score", 0)
         expected = score_to_level(score)
         if expected.value == level:
-            ok("Level/score consistency", f"level={level}, score={score} ✓")
+            ok("Level/score consistency", f"level={level}, value={score} ✓")
         else:
             fail("Level/score consistency",
-                 f"score={score} maps to level={expected.value}, "
+                 f"value={score} maps to level={expected.value}, "
                  f"but state has level={level}")
     except Exception as e:
         fail("Level/score consistency", str(e))

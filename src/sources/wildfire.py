@@ -30,11 +30,11 @@ def scan_wildfire() -> DomainResult:
             worst_level = min(worst_level, 3); total_score = 2.5
 
     return DomainResult(
-        domain_id="wildfire",
+        domain="wildfire",
         level=worst_level,
-        score=min(4.0, total_score),
+        value=min(4.0, total_score),
         weight=4.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="InciWeb + NASA FIRMS",
+        source_url="InciWeb + NASA FIRMS",
     )

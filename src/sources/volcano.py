@@ -21,11 +21,11 @@ def scan_volcano() -> DomainResult:
         indicators.append({"source": "USGS Volcano", "error": "unreachable"})
 
     return DomainResult(
-        domain_id="volcano",
+        domain="volcano",
         level=worst_level,
-        score=min(4.0, total_score),
+        value=min(4.0, total_score),
         weight=4.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="USGS Volcano Hazards Program",
+        source_url="USGS Volcano Hazards Program",
     )

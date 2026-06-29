@@ -1,4 +1,4 @@
-"""DEFCON Monitor v3.2 — Enhanced constants with threat indicators."""
+"""DEFCON Monitor v3.3 — Enhanced constants with threat indicators."""
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
@@ -23,6 +23,7 @@ class DEFCON(IntEnum):
 class DomainResult:
     domain: str; level: int=5; value: float=0.0; weight: float=1.0
     detail: str=""; priority: Priority=Priority.INFO
+    source_url: str=""
     indicators: list=field(default_factory=list)
     raw_data: dict=field(default_factory=dict)
 
@@ -39,6 +40,24 @@ class ScanResult:
     indicators: list=field(default_factory=list)
     metadata: dict=field(default_factory=dict)
 
+@dataclass
+class AlertEvent:
+    priority:    Priority
+    domain:      str
+    level:       int
+    headline:    str
+    body:        str
+    source_url:  str = ""
+    indicators:  list=field(default_factory=list)
+
+def score_to_level(score: float) -> int:
+    """Convert numeric threat score (0–100) to DEFCON level (1–5)."""
+    if score >= 90: return 1
+    if score >= 70: return 2
+    if score >= 50: return 3
+    if score >= 30: return 4
+    return 5
+
 DOMAIN_META = {
     "geopolitical":   {"label":"Geopolitical","emoji":"🌐","weight":5,"color":"#ff4444"},
     "cyber":          {"label":"Cyber","emoji":"💻","weight":4,"color":"#ff8800"},
@@ -49,12 +68,13 @@ DOMAIN_META = {
     "public_health":  {"label":"Public Health","emoji":"🦠","weight":4,"color":"#ee4444"},
     "economic":       {"label":"Economic","emoji":"📊","weight":5,"color":"#CCAA00"},
     "space_weather":  {"label":"Space Weather","emoji":"🌌","weight":2,"color":"#aaaaff"},
-    "maritime":       {"label":"Maritime","emoji":"✈️","weight":2,"color":"#44aaff"},
+    "maritime":       {"label":"Maritime","emoji":"🚢","weight":2,"color":"#44aaff"},
     "nuclear":        {"label":"Nuclear","emoji":"☢️","weight":4,"color":"#44ff44"},
     "biological":     {"label":"Biological","emoji":"🧬","weight":4,"color":"#ee4444"},
     "food":           {"label":"Food","emoji":"🌾","weight":3,"color":"#aaff44"},
     "infrastructure": {"label":"Infrastructure","emoji":"🏗️","weight":3,"color":"#888888"},
     "disinfo":        {"label":"Disinformation","emoji":"📰","weight":2,"color":"#ff44aa"},
+    "local":          {"label":"Local (Your Area)","emoji":"🏠","weight":3,"color":"#44ffaa"},
 }
 
 FINANCIAL_THRESHOLDS = {

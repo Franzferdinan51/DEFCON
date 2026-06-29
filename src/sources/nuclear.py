@@ -21,11 +21,11 @@ def scan_nuclear() -> DomainResult:
         indicators.append({"source": "IAEA Incidents", "error": "unreachable"})
 
     return DomainResult(
-        domain_id="nuclear",
+        domain="nuclear",
         level=worst_level,
-        score=min(5.0, total_score),
+        value=min(5.0, total_score),
         weight=5.0,
         detail=f"{len(indicators)} source(s) checked",
         indicators=indicators,
-        source_name="IAEA + CTBTO",
+        source_url="IAEA + CTBTO",
     )

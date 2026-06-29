@@ -23,13 +23,15 @@ THRESHOLDS = {
 
 
 def _fetch_fred(series_id: str) -> float | None:
-    """Fetch latest value from FRED CSV — no API key for public series."""
+    """Fetch latest value from FRED CSV — 5s timeout, no API key."""
+    import ssl, urllib.request
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=2026-06-20&coed=2026-06-28"
     try:
-        from src.fetcher import fetch
-        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=2026-06-20&coed=2026-06-28"
-        r = fetch(url, timeout=10)
-        if r.success:
-            for line in reversed(r.content.strip().splitlines()):
+        req = urllib.request.Request(url, headers={"User-Agent": "DEFCON-Monitor/3.2"})
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as r:
+            for line in reversed(r.read().decode().strip().split("\n")):
                 line = line.strip()
                 if line and not line.startswith("#"):
                     parts = line.split(",")
