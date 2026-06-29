@@ -1,157 +1,111 @@
-"""DEFCON Level Monitor — Constants, Domains, and Enumerations."""
+"""DEFCON Monitor v3.2 — Enhanced constants with threat indicators."""
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DEFCON Level Enumeration
-# ═══════════════════════════════════════════════════════════════════════════════
+class Priority(IntEnum):
+    CRITICAL = 1; HIGH = 2; MEDIUM = 3; LOW = 4; INFO = 5
 
 class DEFCON(IntEnum):
-    """U.S. Military DEFCON levels — lower number = more severe."""
-
-    UNKNOWN   = 0
-    DEFCON_5 = 5  # FADE OUT    — Normal peacetime readiness
-    DEFCON_4 = 4  # DOUBLE TAKE — Above-normal, increased intel
-    DEFCON_3 = 3  # ROUND HOUSE — Forces stage for 15-min mobilization
-    DEFCON_2 = 2  # FAST PACE   — Armed forces ready within 6 hours
-    DEFCON_1 = 1  # COCKED PISTOL — War imminent / ongoing nuclear conflict
-
+    _1 = 1; _2 = 2; _3 = 3; _4 = 4; _5 = 5
     @property
-    def label(self) -> str:
-        return {
-            0: "UNKNOWN", 1: "BLACK / COCKED PISTOL",
-            2: "RED / FAST PACE",      3: "ORANGE / ROUND HOUSE",
-            4: "YELLOW / DOUBLE TAKE", 5: "GREEN / FADE OUT",
-        }.get(self.value, "?")
-
+    def label(self):
+        return {1:"BLACK / COCKED PISTOL",2:"RED / FAST PACE",
+                3:"ORANGE / ROUND HOUSE",4:"YELLOW / DOUBLE TAKE",
+                5:"GREEN / FADE OUT"}[self._value_]
     @property
-    def civilian(self) -> str:
-        return {
-            0: "Unable to determine — monitor official channels",
-            1: "Immediate shelter / war survival preparations",
-            2: "Review evacuation routes; prepare 72-hr kit",
-            3: "Review emergency plan; confirm supplies; monitor news",
-            4: "Stay informed; review household emergency plan",
-            5: "Normal activities; maintain basic preparedness",
-        }.get(self.value, "?")
-
-    @property
-    def emoji(self) -> str:
-        return {0: "❓", 1: "💀", 2: "🚨", 3: "⚠️", 4: "📢", 5: "✅"}.get(self.value, "❓")
-
-    @property
-    def ansi_color(self) -> str:
-        """ANSI 256 foreground color code."""
-        return {0: "15", 1: "196", 2: "202", 3: "214", 4: "226", 5: "82"}.get(self.value, "15")
-
-    @property
-    def discord_color(self) -> int:
-        """Discord embed color (integer)."""
-        return {0: 0x888888, 1: 0xEE4444, 2: 0xFF6600, 3: 0xFFAA00, 4: 0xFFCC00, 5: 0x44DD88}.get(self.value, 0)
-
-
-def score_to_level(score: int) -> DEFCON:
-    """Convert 0–100 composite threat score to DEFCON level."""
-    if score < 20: return DEFCON.DEFCON_5
-    if score < 40: return DEFCON.DEFCON_4
-    if score < 60: return DEFCON.DEFCON_3
-    if score < 80: return DEFCON.DEFCON_2
-    return DEFCON.DEFCON_1
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 15 Threat Domains
-# ═══════════════════════════════════════════════════════════════════════════════
-
-DOMAIN_META = {
-    # ── id, label, emoji, weight (max pts), color ──────────────────────────
-    "geopolitical":  {"label": "Geopolitical",   "emoji": "🌍", "weight": 18, "color": "#FF4444"},
-    "cyber":         {"label": "Cyber / CISA",    "emoji": "💻", "weight": 14, "color": "#9966FF"},
-    "seismic":       {"label": "Earthquake",      "emoji": "🌋", "weight":  8, "color": "#FF8800"},
-    "weather":       {"label": "Severe Weather",  "emoji": "⛈️",  "weight":  8, "color": "#4488FF"},
-    "volcano":       {"label": "Volcanic Activity","emoji": "🌋", "weight":  4, "color": "#FF5500"},
-    "wildfire":      {"label": "Wildfire",        "emoji": "🔥", "weight":  4, "color": "#FF2200"},
-    "public_health": {"label": "Public Health",   "emoji": "🦠", "weight": 10, "color": "#00CC88"},
-    "economic":      {"label": "Economic",         "emoji": "📊", "weight":  5, "color": "#CCAA00"},
-    "infrastructure":{"label": "Infrastructure",  "emoji": "🏗️", "weight":  5, "color": "#AAAAAA"},
-    "space_weather": {"label": "Space Weather",    "emoji": "🌌", "weight":  4, "color": "#AA44FF"},
-    "maritime":      {"label": "Maritime/Aviation","emoji": "✈️", "weight":  3, "color": "#00AACC"},
-    "nuclear":        {"label": "Nuclear/Rad",     "emoji": "☢️", "weight":  5, "color": "#CCFF00"},
-    "biological":     {"label": "Biological",       "emoji": "🧬", "weight":  5, "color": "#00FF88"},
-    "food":           {"label": "Food Security",    "emoji": "🌾", "weight":  4, "color": "#DDAA44"},
-    "disinfo":        {"label": "Disinformation",   "emoji": "📰", "weight":  3, "color": "#888888"},
-}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Alert Priority
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class Priority(IntEnum):
-    CRITICAL = 0
-    HIGH     = 1
-    MEDIUM   = 2
-    LOW      = 3
-    INFO     = 4
-
-    @property
-    def emoji(self) -> str:
-        return {0: "🔴", 1: "🚨", 2: "⚠️", 3: "🟡", 4: "ℹ️"}.get(self.value, "ℹ️")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Domain Result Dataclass
-# ═══════════════════════════════════════════════════════════════════════════════
+    def civilian(self):
+        return {1:"Maximum force ready",2:"Armed forces mobilized",
+                3:"Increased readiness",4:"Increased intelligence",
+                5:"Normal peacetime"}[self._value_]
 
 @dataclass
 class DomainResult:
-    """Result from a single domain scanner."""
-    domain_id:   str
-    level:       int          = 5   # 1=critical, 5=clear
-    score:       float        = 0.0 # raw domain score (0–weight)
-    weight:      float        = 0.0 # max possible for this domain
-    detail:      str          = ""
-    raw:         object       = None  # source-specific data
-    indicators:  list         = field(default_factory=list)  # sub-indicators
-    anomaly:     bool          = False  # flagged by trend engine
-    z_score:     float         = 0.0
-    trend:       str           = "→"   # ↑ ↓ →
-    source_name: str           = ""
-    source_url:  str           = ""
-    fetched_at: str            = ""   # ISO timestamp
+    domain: str; level: int=5; value: float=0.0; weight: float=1.0
+    detail: str=""; priority: Priority=Priority.INFO
+    indicators: list=field(default_factory=list)
+    raw_data: dict=field(default_factory=dict)
 
-    @property
-    def score_pct(self) -> float:
-        """Score as percentage of max weight."""
-        if self.weight <= 0:
-            return 0.0
-        return min(100.0, (self.score / self.weight) * 100)
-
+@dataclass
+class ThreatIndicator:
+    name: str; level: int; threshold: float; current: float
+    severity: str; source: str
 
 @dataclass
 class ScanResult:
-    """Full composite scan result across all domains."""
-    level:         DEFCON
-    composite:     float       # 0–100
-    domain_results: dict[str, DomainResult]
-    trend:         str         # "escalating" | "stable" | "de-escalating"
-    anomaly_domains: list[str]
-    confidence:    float       = 1.0
-    elapsed_ms:    float       = 0.0
-    fetched_at:    str         = ""
-    history_entries: int       = 0
+    timestamp: str; level: int; threat_score: float; trend: str="stable"
+    domains: list=field(default_factory=list); alerts: list=field(default_factory=list)
+    anomalies: list=field(default_factory=list)
+    indicators: list=field(default_factory=list)
+    metadata: dict=field(default_factory=dict)
 
+DOMAIN_META = {
+    "geopolitical":   {"label":"Geopolitical","emoji":"🌐","weight":5,"color":"#ff4444"},
+    "cyber":          {"label":"Cyber","emoji":"💻","weight":4,"color":"#ff8800"},
+    "seismic":        {"label":"Seismic","emoji":"🌋","weight":3,"color":"#ffaa00"},
+    "weather":        {"label":"Weather","emoji":"⛈️","weight":3,"color":"#ffcc00"},
+    "volcano":        {"label":"Volcano","emoji":"🌋","weight":2,"color":"#ffdd44"},
+    "wildfire":       {"label":"Wildfire","emoji":"🔥","weight":2,"color":"#ff9900"},
+    "public_health":  {"label":"Public Health","emoji":"🦠","weight":4,"color":"#ee4444"},
+    "economic":       {"label":"Economic","emoji":"📊","weight":5,"color":"#CCAA00"},
+    "space_weather":  {"label":"Space Weather","emoji":"🌌","weight":2,"color":"#aaaaff"},
+    "maritime":       {"label":"Maritime","emoji":"✈️","weight":2,"color":"#44aaff"},
+    "nuclear":        {"label":"Nuclear","emoji":"☢️","weight":4,"color":"#44ff44"},
+    "biological":     {"label":"Biological","emoji":"🧬","weight":4,"color":"#ee4444"},
+    "food":           {"label":"Food","emoji":"🌾","weight":3,"color":"#aaff44"},
+    "infrastructure": {"label":"Infrastructure","emoji":"🏗️","weight":3,"color":"#888888"},
+    "disinfo":        {"label":"Disinformation","emoji":"📰","weight":2,"color":"#ff44aa"},
+}
 
-@dataclass
-class AlertEvent:
-    """A single alert event to be dispatched."""
-    priority:    Priority
-    domain:      str
-    level:       int
-    headline:    str
-    body:        str
-    source_url:  str = ""
-    indicators:  list = field(default_factory=list)
-    raw:         object = None
+FINANCIAL_THRESHOLDS = {
+    "vix":             {"extreme":40,"high":25,"medium":18,"low":12},
+    "creditspread_ig": {"extreme":250,"high":150,"medium":100,"low":60},
+    "creditspread_hy": {"extreme":800,"high":500,"medium":350,"low":200},
+    "sofr_overnight":  {"extreme":6.0,"high":5.5,"medium":5.3,"low":5.0},
+    "yield_2y10y":    {"extreme":-50,"high":0,"medium":30,"low":50},
+    "oed_sp500":      {"extreme":25,"high":15,"medium":8,"low":3},
+    "dxy":             {"extreme":115,"high":108,"medium":103,"low":98},
+    "wti_oil":        {"extreme":140,"high":110,"medium":90,"low":70},
+    "td10y":          {"extreme":5.5,"high":5.0,"medium":4.5,"low":3.5},
+}
+
+ACTIVE_THREATS = [
+    {
+        "id": "THREAT-2026-0628-001", "date": "2026-06-28", "severity": "CRITICAL",
+        "domain": "economic",
+        "title": "BIS Annual Report 2026 — AI Data Center Debt Systemic Risk",
+        "actors": ["BIS","Bank of Canada","ECB"],
+        "summary": "BIS, BoC, and ECB simultaneously warn US AI data center debt poses global financial stability risk. 75B+ in late-2025 bond/loan issuance. 600B projected private credit to AI. Structured finance (9B+) held by pensions/insurers. Bank of Canada forcing sales of data center securities. Default cascade risk if AI utilization misses projections.",
+        "primary_src": "https://www.bis.org/publ/arpdf/ar2026e.htm",
+        "tags": ["AI","data-center","BIS","systemic-risk","pensions","insurance"],
+        "deficon_domain": "economic", "threat_score_impact": 25,
+    },
+    {
+        "id": "THREAT-2026-0628-002", "date": "2026-06-12", "severity": "HIGH",
+        "domain": "cyber",
+        "title": "US Commerce Export Controls — Claude Mythos 5 + Fable 5 (FLAME Incident)",
+        "actors": ["US Commerce Dept","Howard Lutnick","Anthropic","Amazon","Andy Jassy"],
+        "summary": "First-ever US export control on a released AI model. Amazon CEO Andy Jassy reported jailbreak exposing offensive cyber vulnerabilities. Global access suspended June 12-13. Partially restored June 25-28 for ~100 vetted US institutions. Foreign nationals still blocked. Creates precedent: US now treats frontier AI software like controlled munitions.",
+        "primary_src": "https://x.com/stretchcloud/status/2070738897429205321",
+        "tags": ["Anthropic","Claude","Mythos","Fable","export-control","AI-governance","FLAME"],
+        "deficon_domain": "cyber", "threat_score_impact": 15,
+    },
+    {
+        "id": "THREAT-2026-0628-003", "date": "2026-06-28", "severity": "HIGH",
+        "domain": "economic",
+        "title": "Blackstone $BX Positioning — Ready to Dump Data Centers on Pensions in Default",
+        "actors": ["Blackstone","BX","ORCL","SOXX","DRAM"],
+        "summary": "Blackstone positioned to offload empty/underutilized data centers back to pension funds in a default scenario. ORCL, SOXX, and DRAM semiconductor stocks flagged as exposed. 30B Meta Louisiana data center financing. Hyperscaler capex spiral with questionable utilization rates. Pension funds are end-buyers of last resort.",
+        "primary_src": "https://x.com/rdd147/status/2071339539646533902",
+        "tags": ["Blackstone","BX","data-center","pensions","default","AI-debt","systemic"],
+        "deficon_domain": "economic", "threat_score_impact": 10,
+    },
+]
+
+LEVEL_BANDS = [
+    (80,1,"EXTREME — CRISIS MODE"),
+    (60,2,"HIGH — ACCELERATED READINESS"),
+    (40,3,"ELEVATED — INCREASED ALERT"),
+    (20,4,"GUARDED — ABOVE NORMAL"),
+    ( 0,5,"LOW — NORMAL CONDITIONS"),
+]

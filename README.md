@@ -1,4 +1,4 @@
-# DEFCON Level Monitor v3.1
+# DEFCON Level Monitor v3.2
 
 > **15-domain OSINT threat assessment** — real-time composite threat score + multi-channel alerts.
 
@@ -116,6 +116,52 @@ DEFCON/
 ├── LICENSE
 ├── README.md
 └── SKILL.md                  # Hermes Agent skill definition
+
+---
+
+## Active Intelligence (v3.2 — June 28, 2026)
+
+### 🔥 FLAME Incident — Claude Mythos 5 + Fable 5 Export Controls
+| | |
+|---|---|
+| **THREAT ID** | `THREAT-2026-0628-002` |
+| **Severity** | HIGH |
+| **Date** | June 12, 2026 |
+| **Actors** | US Commerce Dept (Howard Lutnick), Anthropic, Amazon (Andy Jassy) |
+| **What** | First-ever US export controls on a released AI model. Amazon CEO reported jailbreak exposing offensive cyber capabilities. Global access suspended June 12-13. Partially restored June 25-28 for ~100 vetted US institutions. |
+| **Precedent** | US now treats frontier AI software like controlled munitions |
+| **Impact on Grok/xAI** | None — only Anthropic models targeted |
+| **Source** | [x.com/stretchcloud](https://x.com/stretchcloud/status/2070738897429205321) |
+
+### 📊 BIS AI Data Center Debt Crisis — Active
+| | |
+|---|---|
+| **THREAT ID** | `THREAT-2026-0628-001` |
+| **Severity** | CRITICAL |
+| **Date** | June 28, 2026 (BIS Annual Report released today) |
+| **Actors** | BIS, Bank of Canada (Tiff Macklem), ECB |
+| **What** | Three major institutions simultaneously warn US AI data center debt poses global financial stability risk. $75B+ in 2025 bond issuance. $600B projected private credit to AI. Structured finance ($9B+) held by pensions/insurers. Bank of Canada forcing sales of data center securities. |
+| **DEFCON Impact** | Economic domain auto-elevated to DEFCON 3 when this threat is active |
+| **Source** | [BIS Annual Report 2026](https://www.bis.org/publ/arpdf/ar2026e.htm) |
+
+### 🏗️ Blackstone Positioning — Active
+| | |
+|---|---|
+| **THREAT ID** | `THREAT-2026-0628-003` |
+| **Severity** | HIGH |
+| **Date** | June 28, 2026 |
+| **Actors** | Blackstone ($BX), Oracle ($ORCL), SOXX, DRAM |
+| **What** | Blackstone positioned to dump empty/underutilized data centers back to pension funds in default. Pension funds are end-buyers of last resort. |
+| **Source** | [x.com/rdd147](https://x.com/rdd147/status/2071339539646533902) |
+
+### Your FLAME Risk (US Citizen using Grok/xAI)
+| Scenario | Risk Level | Notes |
+|---|---|---|
+| Using Grok as private US citizen | ✅ **LOW** | No current ban on xAI/Grok |
+| Federal contractor work | ⚠️ **MEDIUM** | EO 14173 proposed; Lutnick hostile to foreign AI |
+| Processing government data via Grok | 🔴 **HIGH** | Explicitly prohibited under current policy |
+| Anthropic Claude (Mythos/Fable) recall | ✅ **N/A** | Only affects Claude, not Grok |
+| Future model restrictions | ⚠️ **MEDIUM** | FLAME shows US will restrict AI exports at software level |
 ```
 
 ---

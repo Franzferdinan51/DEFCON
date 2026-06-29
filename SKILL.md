@@ -1,7 +1,7 @@
 ---
 name: defcon-monitor
 description: "15-domain OSINT DEFCON threat monitor — geopolitical, cyber, seismic, weather, public health, economic, nuclear, biological, food, space weather, volcano, wildfire, infrastructure, maritime, disinfo. Real-time composite score + Telegram/Discord/Slack/PagerDuty alerts."
-version: 3.1.0
+version: 3.2.0
 author: DEFCON Monitor Community
 platforms: [windows, linux, macos]
 metadata:

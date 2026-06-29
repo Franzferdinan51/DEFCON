@@ -1,74 +1,147 @@
-"""Economic scanner — CBOE VIX, WTI crude oil, FRED treasury spreads."""
-from src.constants import DomainResult
-from src.fetcher import fetch, fetch_json
+"""Enhanced Economic Scanner v3.2 — BIS, VIX, credit spreads, structured finance, AI debt."""
+import logging, time
+from src.constants import DomainResult, FINANCIAL_THRESHOLDS, ACTIVE_THREATS, Priority
 
-VIX_URL = "https://cdn.cboe.com/api/global/quotes/VMV.json"
+log = logging.getLogger("defcon.economic")
+
+FRED_SERIES = {
+    "vix":        "VIXCLS",
+    "yield_10y":  "DGS10",
+    "yield_2y":   "DGS2",
+    "wti_oil":    "DCOILWTICO",
+    "sp500":      "SP500",
+    "baa_spread": "BAA",
+    "aaa_spread": "AAA",
+}
+
+THRESHOLDS = {
+    "vix":             {"extreme": 40,  "high": 25,  "medium": 18,  "low": 12},
+    "creditspread_ig": {"extreme": 250, "high": 150, "medium": 100, "low": 60},
+    "yield_2y10y":    {"extreme": -50, "high": 0,   "medium": 30,  "low": 50},
+    "wti_oil":        {"extreme": 140, "high": 110, "medium": 90,  "low": 70},
+}
 
 
-def _fred_series(series_id: str) -> float | None:
-    """Fetch latest value from FRED CSV (no API key needed for public series)."""
-    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+def _fetch_fred(series_id: str) -> float | None:
+    """Fetch latest value from FRED CSV — no API key for public series."""
     try:
+        from src.fetcher import fetch
+        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}&cosd=2026-06-20&coed=2026-06-28"
         r = fetch(url, timeout=10)
         if r.success:
-            lines = [l.strip() for l in r.content.strip().splitlines()
-                     if l.strip() and not l.startswith("#")]
-            if len(lines) >= 2:
-                return float(lines[-1].split(",")[1])
-    except Exception:
-        pass
+            for line in reversed(r.content.strip().splitlines()):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    parts = line.split(",")
+                    if len(parts) == 2 and parts[1] and parts[1] != ".":
+                        return float(parts[1])
+    except Exception as e:
+        log.debug(f"FRED {series_id} failed: {e}")
     return None
 
 
+def _score_indicator(name: str, val: float) -> tuple[int, str]:
+    """Return (level 1-5, severity_label) for a financial indicator."""
+    t = THRESHOLDS.get(name, {})
+    if not t:
+        return 5, "info"
+    if val >= t.get("extreme", 999): return 1, "extreme"
+    if val >= t.get("high",    999): return 2, "high"
+    if val >= t.get("medium",  999): return 3, "medium"
+    if val >= t.get("low",     999): return 4, "low"
+    return 5, "info"
+
+
 def scan_economic() -> DomainResult:
-    """Scan VIX, oil prices, and yield curve for economic stress signals."""
-    indicators, worst_level, total_score = [], 5, 0.0
+    """
+    Enhanced economic scanner — BIS systemic risk + financial crisis indicators.
+    Reads from: CBOE VIX, FRED treasury yields/spreads/oil, and ACTIVE_THREATS.
+    Returns DomainResult with financial data, BIS AI-debt alert, and threat list.
+    """
+    fred, parts, indicators, total, n = {}, [], [], 0.0, 0
 
-    # VIX
-    try:
-        d = fetch_json(VIX_URL, timeout=8)
-        if d and d.get("data"):
-            vix = d["data"][0].get("value", 0)
-            indicators.append({"source": "CBOE VIX", "value": round(vix, 2)})
-            if vix >= 35:
-                worst_level = min(worst_level, 2); total_score += 3.0
-            elif vix >= 25:
-                worst_level = min(worst_level, 3); total_score += 2.0
-            elif vix >= 20:
-                worst_level = min(worst_level, 4); total_score += 1.0
-    except Exception:
-        indicators.append({"source": "CBOE VIX", "error": "unreachable"})
+    for name, sid in FRED_SERIES.items():
+        v = _fetch_fred(sid)
+        if v is not None:
+            fred[name] = v
 
-    # WTI Crude
-    oil = _fred_series("DCOILWTICO")
-    if oil:
-        indicators.append({"source": "WTI Oil $/bbl", "value": round(oil, 2)})
-        if oil >= 120:
-            worst_level = min(worst_level, 2); total_score += 1.5
-        elif oil >= 100:
-            worst_level = min(worst_level, 3); total_score += 1.0
+    vix = fred.get("vix")
+    if vix is not None:
+        lvl, sev = _score_indicator("vix", vix)
+        total += lvl * 2; n += 1
+        indicators.append(f"VIX={vix:.1f} [{sev}]")
+        parts.append(f"VIX {vix:.1f}")
 
-    # Yield curve (10Y-2Y)
-    try:
-        s10 = _fred_series("DGS10")
-        s2  = _fred_series("DGS2")
-        if s10 is not None and s2 is not None:
-            spread = round(s10 - s2, 3)
-            indicators.append({"source": "10Y-2Y Spread", "value": spread})
-            if spread <= -0.5:
-                worst_level = min(worst_level, 2); total_score += 2.0
-            elif spread <= 0:
-                worst_level = min(worst_level, 3); total_score += 1.0
-    except Exception:
-        pass
+    y10 = fred.get("yield_10y"); y2 = fred.get("yield_2y")
+    if y10 is not None and y2 is not None:
+        try:
+            sp = (float(y10) - float(y2)) * 100  # basis points
+            lvl, sev = _score_indicator("yield_2y10y", sp)
+            total += lvl * 2; n += 1
+            indicators.append(f"2y-10y={sp:.0f}bp [{sev}]")
+            parts.append(f"YC {sp:.0f}bp")
+        except Exception:
+            pass
 
-    score = min(5.0, total_score)
+    baa = fred.get("baa_spread"); aaa = fred.get("aaa_spread")
+    if baa is not None and aaa is not None:
+        try:
+            cs = (float(baa) - float(aaa)) * 100  # basis points
+            lvl, sev = _score_indicator("creditspread_ig", cs)
+            total += lvl * 1.5; n += 1
+            indicators.append(f"IG spread={cs:.0f}bp [{sev}]")
+            parts.append(f"CS {cs:.0f}bp")
+        except Exception:
+            pass
+
+    oil = fred.get("wti_oil")
+    if oil is not None:
+        lvl, sev = _score_indicator("wti_oil", oil)
+        total += lvl * 1.0; n += 1
+        indicators.append(f"OIL=${oil:.1f} [{sev}]")
+        parts.append(f"OIL ${oil:.1f}")
+
+    sp5 = fred.get("sp500")
+    if sp5 is not None:
+        parts.append(f"SP500={sp5:.0f}")
+
+    avg = total / max(n, 1)
+    level = max(1, min(5, int(round(avg))))
+
+    # ── BIS AI-Debt Systemic Alert ─────────────────────────────────────────
+    # Check if any economic THREAT is active and elevate the score
+    economic_threats = [
+        t for t in ACTIVE_THREATS
+        if t.get("deficon_domain") == "economic"
+        and t.get("severity") in ("CRITICAL", "HIGH", "EXTREME")
+    ]
+    if economic_threats:
+        threat = economic_threats[0]
+        level = min(level, 3)
+        indicators.insert(0, f"\u26a0 {threat['id']}: {threat['title'][:55]}")
+        parts.insert(0, f"\U0001f6a8 BIS ALERT: {threat['title'][:50]}")
+
+    detail = "; ".join(parts[:5]) if parts else "Indicators nominal"
+    priority = (
+        Priority.CRITICAL if level <= 2
+        else Priority.HIGH if level == 3
+        else Priority.MEDIUM
+    )
+    log.info(f"Economic scan: level={level}, fred_keys={list(fred.keys())}")
+
     return DomainResult(
-        domain_id="economic",
-        level=worst_level,
-        score=score,
+        domain="economic",
+        level=level,
+        value=avg,
         weight=5.0,
-        detail=f"VIX={'%.1f' % (vix if 'vix' in dir() else 0)}, oil=${oil if 'oil' in dir() else '?'}/bbl",
+        detail=detail,
+        priority=priority,
         indicators=indicators,
-        source_name="CBOE VIX + FRED + WTI",
+        raw_data={
+            "fred": fred,
+            "economic_threats": [
+                {"id": t["id"], "severity": t["severity"], "title": t["title"]}
+                for t in economic_threats
+            ],
+        },
     )
